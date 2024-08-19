@@ -9,8 +9,6 @@ import time
 import sys
 sys.path.append('/home/ilimnuc/plantProj/')
 os.chdir("/home/ilimnuc/plantProj/")
-# MARK'S LIB
-from lib.opencv_video_utils import videoPlayer
 
 # ------ GLOBALS ------
 import matplotlib as mpl 
@@ -18,8 +16,6 @@ import matplotlib as mpl
 
 # ------ VISIBLE CAMERA ------
 from cameras.ids_ueye import uEye
-# ------ Thermal CAMERA ------
-from cameras.boson_grabber import BosonFrameGrabber\
 
 from lib.image_processing import *
 from lib.thermal_utils import *
@@ -63,7 +59,7 @@ for port in glob.glob('/dev/ttyACM*'):
     except Exception as e:
         print(e)
         print(f"Failed to connect on {port}. Trying the next port...")
-        sleep(1)  # Optional: add a small delay before trying the next port
+        time.sleep(1)  # Optional: add a small delay before trying the next port
 
 if CAMERA == 'Boson' and RADIOMETRY_ENABLE:
     myCam.radiometrySetTempStableEnable(FLR_ENABLE_E.FLR_ENABLE)
