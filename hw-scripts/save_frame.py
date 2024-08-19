@@ -8,6 +8,7 @@ from datetime import datetime
 import time
 import sys
 import glob
+import dlipower
 workspace_path = '/home/ilimnuc/plantProj/'
 sys.path.append(workspace_path)
 os.chdir(workspace_path)
@@ -85,6 +86,23 @@ vis_img, vis_tstamp = vis_cam_obj.getNextImage(), time.time()
 (thermal_img, _), thermal_tstamp = thread.read(), time.time()
 print("Vis Img shape:", vis_img.shape, "Thermal img shape:", thermal_img.shape)
 print("Vis-Thermal frames captured.")
+
+# If the thermal image is all zeros, then swith off and switch on the thermal camera
+if np.all(thermal_img == 0):
+    print("Thermal image is all zeros. Rebooting the thermal camera...")
+    thread.stop()
+    thread.join()
+    del vis_cam_obj
+    del thermal_cam
+    print("Cameras disconnected.")
+    switch = dlipower.PowerSwitch(hostname="192.168.0.100", userid="admin", password="4321")
+    time.sleep(5)
+    switch.off(6)
+    time.sleep(5)
+    switch.on(6)
+    time.sleep(5)
+    print("Thermal camera rebooted.")
+    sys.exit(1)
 
 # Save the vis-thermal frame
 save_data = {
