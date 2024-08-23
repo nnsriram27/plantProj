@@ -90,7 +90,12 @@ def preview_vis_thermal_cam(vis_cam,thermal_cam,resize_factor = 1.5, is_color=Tr
             ## Visible Camera ##
             vis_img, vis_tstamp = vis_cam.getNextImage(), time.time()
             vis_img_color = np.floor(cv2.cvtColor(vis_img, cv2.COLOR_BayerRGGB2BGR) / 16).astype(np.uint8)
-            cv2.imshow('Visible', vis_img_color)
+            # Apply gamma correction to the visible image
+            gamma_val = 0.6
+            vis_img_gamma = np.power(vis_img_color / 255.0, gamma_val)
+            vis_img_gamma = (vis_img_gamma * 255).astype(np.uint8)
+            cv2.imshow('Visible', vis_img_gamma)
+            # cv2.imshow('Visible', vis_img_color)
                 
             # thermal_frame, _ = thermal_cam.get_latest_frame()
             thermal_frame, _ = thread.read()
@@ -100,6 +105,9 @@ def preview_vis_thermal_cam(vis_cam,thermal_cam,resize_factor = 1.5, is_color=Tr
                 thermal_frame, minmax = thermal_cam_operation(thermal_frame,use_minmax)
             if resize_factor!=1:
                 thermal_frame = cv2.resize(thermal_frame,None,fx = resize_factor, fy = resize_factor)
+            
+            # horizontally flip thermal image
+            thermal_frame = cv2.flip(thermal_frame, 1)
                 
             # Display curr_frame_min and curr_frame_max
             cv2.putText(thermal_frame,'Min: {}'.format(curr_frame_min),(30,50), FONT, 0.60,(255,255,255),2,cv2.LINE_AA)
