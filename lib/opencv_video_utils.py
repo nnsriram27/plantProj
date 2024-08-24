@@ -40,6 +40,20 @@ class videoPlayerVisThermal():
 
     # -------- Loop control -------- #
     def loop_control(self,key):
+        """
+            Loop control function.
+            Press `Enter` to exit the loop.
+            Press `+` or `-` to increase or decrease frame number.
+            Press `Space` to toggle thermal minmax.
+            Press `w` to toggle warp visible image.
+            Press `c` to clear selected pixels.
+            Press `d` or `a` to increase or decrease speed level.
+            Press `o` to overlay visible and thermal images.
+            Press `i` or `u` to increase or decrease alpha value.
+            Press `h` to toggle homography mode.
+            Press `s` to save homography matrix.
+            Press `p` to plot pixel values across time.
+        """
         if key==13:
             return 1
         if key==43:
@@ -364,5 +378,3 @@ class videoPlayer():
     def export_raw_as_npz(self,filename, frame_recording, timestamps):
         np.savez_compressed(filename, frame_recording=frame_recording, timestamps=timestamps)
         print('done exporting raw data to {}'.format(filename))
-
-

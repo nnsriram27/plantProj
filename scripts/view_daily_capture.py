@@ -27,8 +27,9 @@ daily_capture_data_path = './data/daily_capture/'
 
 # Get from and to date time input and only show the frames between these two date times. The files are stored in the format '%Y-%m-%d_%H-%M-%S'
 parser = argparse.ArgumentParser(description='View daily capture data')
-parser.add_argument('--from_date', type=str, help='From date in the format %Y-%m-%d %H-%M-%S')
-parser.add_argument('--to_date', type=str, help='To date in the format %Y-%m-%d %H:%M:%S')
+parser.add_argument('--from-date', type=str, help='From date in the format %Y-%m-%d %H-%M-%S')
+parser.add_argument('--to-date', type=str, help='To date in the format %Y-%m-%d %H:%M:%S')
+parser.add_argument('--load-samv2', action='store_true', help='Load SAMv2 for segmentation')
 args = parser.parse_args()
 
 from_date = np.datetime64(args.from_date) if args.from_date is not None else None
@@ -111,45 +112,6 @@ def read_pixel_values_for_allfiles(selected_pix_vis, selected_pix_thermal):
             print(thermal_img.shape, vis_img.shape)
     return np.stack(pix_value_vis), np.stack(pix_value_thermal), np.stack(pix_datetime)
 
-# def plot_pixel_values_across_time(cls, selected_pix_vis, selected_pix_thermal):
-#     pix_value_vis, pix_value_thermal, pix_datetime = read_pixel_values_for_allfiles(selected_pix_vis, selected_pix_thermal)
-#     print(pix_value_vis.shape, pix_value_thermal.shape, pix_datetime.shape)
-    
-#     cls.pixel_plot_fig = plt.figure(figsize=(20, 10))
-    
-#     if pix_value_vis.size != 0:
-#         ax1 = cls.pixel_plot_fig.add_subplot(211)
-#         for i in range(pix_value_vis.shape[1]):
-#             line, = ax1.plot(pix_datetime, pix_value_vis[:, i], label=f'Pixel {selected_pix_thermal[i]}')
-#             # Adding hover functionality
-#             mplcursors.cursor(line, hover=True)
-#         ax1.set_title('Visible Camera Pixel Values')
-#         ax1.set_xlabel('Date Time')
-#         ax1.set_ylabel('Pixel Value')
-#         ax1.legend()
-    
-#     if pix_value_thermal.size != 0:
-#         ax2 = cls.pixel_plot_fig.add_subplot(212)
-#         for i in range(pix_value_thermal.shape[1]):
-#             line, = ax2.plot(pix_datetime, pix_value_thermal[:, i], label=f'Pixel {selected_pix_thermal[i]}')
-#             # Adding hover functionality
-#             mplcursors.cursor(line, hover=True)
-#         ax2.set_title('Thermal Camera Pixel Values')
-#         ax2.set_xlabel('Date Time')
-#         ax2.set_ylabel('Pixel Value')
-#         ax2.legend()
-    
-#     # Enable interactive mode
-#     plt.ion()
-#     plt.show()
-
-#     # Add a pause to keep the plot window open (optional)
-#     input("Press Enter to continue...")
-
-#     # Turn off interactive mode
-#     plt.ioff()
-
-
 def plot_pixel_values_across_time(cls, selected_pix_vis, selected_pix_thermal):
     pix_value_vis, pix_value_thermal, pix_datetime = read_pixel_values_for_allfiles(selected_pix_vis, selected_pix_thermal)
     print(pix_value_vis.shape, pix_value_thermal.shape, pix_datetime.shape)
@@ -202,5 +164,7 @@ def plot_pixel_values_across_time(cls, selected_pix_vis, selected_pix_thermal):
 videoPlayerVisThermal.plot_pixel_values_across_time = plot_pixel_values_across_time
     
 player = videoPlayerVisThermal(N_frames, get_vis_thermal_img_func, thr2Vis_HMatrix=H_thr2vis, workspace_path=workspace_path)
+# Print the description of loop_control function in player
+print(player.loop_control.__doc__)
 player.play_video(show_frame_number=True)
 plt.close('all')
