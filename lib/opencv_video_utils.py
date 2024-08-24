@@ -6,8 +6,7 @@ import pickle
 import skimage
 import os
 
-from lib.thermal_utils import thermal_cam_operation
-from lib.image_processing import vis_cam_operation
+from lib.image_processing import vis_cam_operation, thermal_cam_operation
 import datetime
 
 FONT = cv2.FONT_HERSHEY_SIMPLEX

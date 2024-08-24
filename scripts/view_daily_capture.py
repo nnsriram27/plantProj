@@ -4,11 +4,19 @@ import os
 import sys
 import cv2
 import matplotlib.pyplot as plt
-import mplcursors
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-workspace_path = '/home/ilimnuc/plantProj/'
+# Get the current directory of the script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Get the parent directory of the script directory
+parent_dir = os.path.dirname(script_dir)
+
+# Set the workspace path
+workspace_path = parent_dir
+
+print(f'Workspace path: {workspace_path}')
 sys.path.append(workspace_path)
 os.chdir(workspace_path)
 
