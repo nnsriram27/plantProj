@@ -29,7 +29,6 @@ daily_capture_data_path = './data/daily_capture/'
 parser = argparse.ArgumentParser(description='View daily capture data')
 parser.add_argument('--from-date', type=str, help='From date in the format %Y-%m-%d %H-%M-%S')
 parser.add_argument('--to-date', type=str, help='To date in the format %Y-%m-%d %H:%M:%S')
-parser.add_argument('--load-samv2', action='store_true', help='Load SAMv2 for segmentation')
 args = parser.parse_args()
 
 from_date = np.datetime64(args.from_date) if args.from_date is not None else None
