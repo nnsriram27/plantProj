@@ -159,8 +159,12 @@ def plot_pixel_values_across_time(cls, selected_pix_vis, selected_pix_thermal):
     # Show the plot
     cls.pixel_plot_fig.show()
 
+@classmethod
+def get_img_fname(cls, data_counter):
+    return npz_files[data_counter].split('/')[-1]
 
 videoPlayerVisThermal.plot_pixel_values_across_time = plot_pixel_values_across_time
+videoPlayerVisThermal.get_img_fname = get_img_fname
     
 player = videoPlayerVisThermal(N_frames, get_vis_thermal_img_func, thr2Vis_HMatrix=H_thr2vis, workspace_path=workspace_path)
 # Print the description of loop_control function in player
