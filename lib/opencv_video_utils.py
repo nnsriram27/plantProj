@@ -8,6 +8,9 @@ import os
 
 from lib.image_processing import vis_cam_operation, thermal_cam_operation
 import datetime
+from tqdm import tqdm
+import glob
+from matplotlib import pyplot as plt
 
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -30,18 +33,35 @@ class videoPlayerVisThermal():
         self.alpha = 0.5
         self.pixel_plot_fig = None
         self.pixel_plot_counter = 0
+        self.skip_frames_for_seg = 5
 
         self.warp_vis_img = False
         self.homography_mode = False
         self.workspace_path = workspace_path
+        self.show_segmentation_mask = False
+        self.show_visible = True
+        self.show_thermal = True
+        self.saved_thermal_frames_tmp = False
+        self.shift_toggle = False
+        self.mouse_location = None
+        self.video_segmentation_mode = False
+        self.add_points_to_predictor = False
+        self.propagate_anns_bool = False
+        self.video_masks = None
+        self.all_thr_mask_names = None
+
+        self.common_box_pts = None
+        self.video_ann_pts = []
+        self.video_ann_pts_label = []
 
     def plot_pixel_values_across_time(self, selected_pix_vis, selected_pix_thermal):
         pass
-
+    
     # -------- Loop control -------- #
     def loop_control(self,key):
         """
             Loop control function.
+            Press 'shift and then h' to print docstring.
             Press `Enter` to exit the loop.
             Press `+` or `-` to increase or decrease frame number.
             Press `Space` to toggle thermal minmax.
@@ -53,44 +73,68 @@ class videoPlayerVisThermal():
             Press `h` to toggle homography mode.
             Press `s` to save homography matrix.
             Press `p` to plot pixel values across time.
+            Press `m` to toggle segmentation mask.
+            Press `v` to toggle visible image.
+            Press `t` to toggle thermal image.
+            Press `shift` to toggle shift key.
+            Press `shift and then s` to go to samv2 segmentation mode.
+
+            In samv2 segmentation mode:
+            Press `4` or `6` to increase or decrease object id number.
+            Press `f` or `b` to add a foreground or background annotation point.
+            Press `g` to add a common box points.
+            Press `g` and then `shift` to remove common box points.
+            Press `c` to clear annotation points.
+            Press `r` to add annotation points to predictor.
+            Press `r` and then `shift` to propagate annotations across frames.
+            Press `e` to add box points to all frames.
+            Press `w` and then `shift` to reset inference state.
+            Press `t` and then `shift` to save video segmentation masks.
+
         """
         if key==13:
             return 1
-        if key==43:
+        elif key==43:
             self.data_counter=(self.data_counter+self.speed_level) % self.N_frames 
-        if key==45:
+            if self.video_segmentation_mode:
+                self.video_ann_pts = []
+                self.video_ann_pts_label = []
+        elif key==45:
             self.data_counter=(self.data_counter-self.speed_level) % self.N_frames 
+            if self.video_segmentation_mode:
+                self.video_ann_pts = []
+                self.video_ann_pts_label = []
 
-        if key==32:
+        elif key==32:
             if self.thermal_minmax is not None:
                 self.thermal_minmax = None
             else:
                 vis_img_raw, thermal_img = self.get_vis_thermal_img_func(self.data_counter)
                 self.thermal_minmax = (thermal_img.min(),thermal_img.max())
-        if key==ord("w"):
+        elif key==ord("w"):
             if self.thr2visH is not None:
                 self.warp_vis_img = not self.warp_vis_img
-                self.update_plot()
+                # self.update_plot()
 
-        if key==ord("c"):
+        elif key==ord("c") and not self.video_segmentation_mode:
             self.selected_pix_vis = []
             self.selected_pix_thermal = []
             if self.pixel_plot_fig is not None:
                 self.pixel_plot_fig.data = []
                 self.pixel_plot_counter = 0
                 
-            self.update_plot()
+            # self.update_plot()
 
-        if key==ord("d"):
+        elif key==ord("d"):
             self.speed_level += 10
             self.speed_level = max(self.speed_level, 1)
             print('Speed level: {}'.format(self.speed_level))
-        if key==ord("a"):
+        elif key==ord("a"):
             self.speed_level -= 10 
             self.speed_level = max(self.speed_level, 1)
             print('Speed level: {}'.format(self.speed_level))
 
-        if key == ord("o"):
+        elif key == ord("o"):
             if self.thr2visH is not None:
                 self.overlay_vis_thr = not self.overlay_vis_thr
                 if not self.overlay_vis_thr:
@@ -101,31 +145,159 @@ class videoPlayerVisThermal():
                     cv2.setMouseCallback("Overlay Images", self.mouse_callback_overlay)
                     cv2.moveWindow("Overlay Images", self.total_width_occ, 50)
                     self.total_width_occ += 640
-                self.update_plot()
+                # self.update_plot()
         
-        if key == ord("i"):
+        elif key == ord("i"):
             self.alpha += 0.05
             self.alpha = min(max(self.alpha, 0.0), 1.0)
-        if key == ord("u"):
+        elif key == ord("u"):
             self.alpha -= 0.05
             self.alpha = min(max(self.alpha, 0.0), 1.0)
-        if key == ord("h"):
+        elif key == ord("h") and not self.shift_toggle:
             self.homography_mode = not self.homography_mode
             if self.homography_mode:
                 self.selected_pix_vis = []
                 self.selected_pix_thermal = []
-            self.update_plot()
+            # self.update_plot()
         
-        if key == ord("s"):
+        elif key == ord("s") and not self.shift_toggle:
             if self.homography_mode:
                 print('Saving homography matrix to vis_thermal_H.npz')
                 save_path = os.path.join(self.workspace_path, 'data', 'misc', f'vis_thermal_H_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.npz')
                 np.savez(save_path, H_boson2bfly=self.thr2visH)
         
-        if key == ord("p"):
+        elif key == ord("p"):
             self.plot_pixel_values_across_time(self.selected_pix_vis, self.selected_pix_thermal)
 
+        elif key == ord("m"):
+            self.show_segmentation_mask = not self.show_segmentation_mask
+            # self.update_plot()
+        elif key == ord("v"):
+            self.show_visible = not self.show_visible
+            if not self.show_visible:
+                cv2.destroyWindow("Visible Image")
+            else:
+                cv2.namedWindow("Visible Image")
+                cv2.setMouseCallback("Visible Image", self.mouse_callback_vis)
+            # self.update_plot()
+        elif key == ord("t") and not self.video_segmentation_mode and not self.shift_toggle:
+            self.show_thermal = not self.show_thermal
+            if not self.show_thermal:
+                cv2.destroyWindow("Thermal Image")
+            else:
+                cv2.namedWindow("Thermal Image")
+                cv2.setMouseCallback("Thermal Image", self.mouse_callback_thermal)
+            # self.update_plot()
+
+        # If key is shift + s then save thermal frames to tmp
+        elif key == ord("s") and self.shift_toggle:
+            self.video_segmentation_mode = not self.video_segmentation_mode
+            if self.video_segmentation_mode:
+                print("Going to samv2 segmentation mode")
+                self.save_thermal_frames_to_tmp()
+                self.obj_id_num = 1
+                self.show_segmentation_mask = True
+                self.initialize_segmentation_predictor()
+                print("First use 'g' to add a common box points. Then press 'e' to add box points to all frames.")
+                print("Then refine predictions by adding point annotations to the predictor.\n")
+                print("Press '4' or '6' to increase or decrease object id number.")
+                print("Press 'f' or 'b' to add a foreground or background annotation point.")
+            else:
+                print("Exiting samv2 segmentation mode.")
+                self.show_segmentation_mask = False
+                self.obj_id_num = None
+
+        if key == ord("h") and self.shift_toggle:
+            print(self.loop_control.__doc__)
+
+        if self.video_segmentation_mode:
+            # print("Entering video loop")
+            if key == ord("4"):
+                self.obj_id_num += 1
+                self.add_points_to_predictor = True
+                # self.update_plot()
+                print(f'Object id number: {self.obj_id_num}')
+            if key == ord("6"):
+                self.obj_id_num -= 1
+                self.obj_id_num = max(self.obj_id_num, 1)
+                self.add_points_to_predictor = True
+                # self.update_plot()
+                print(f'Object id number: {self.obj_id_num}')
+            if key == ord("f"):
+                self.video_ann_pts.append(self.mouse_location)
+                self.video_ann_pts_label.append(1)
+            if key == ord("b"):
+                self.video_ann_pts.append(self.mouse_location)
+                self.video_ann_pts_label.append(0)
+            if key == ord("g") and not self.shift_toggle:
+                if self.common_box_pts is None:
+                    self.common_box_pts[self.obj_id_num] = []
+                if len(self.common_box_pts[self.obj_id_num]) == 2:
+                    self.common_box_pts[self.obj_id_num].pop(0)
+                self.common_box_pts[self.obj_id_num].append(self.mouse_location)
+            if key == ord("g") and self.shift_toggle:
+                self.common_box_pts[self.obj_id_num] = []
+            if key == ord("c"):
+                self.video_ann_pts = []
+                self.video_ann_pts_label = []
+            if key == ord("r") and not self.shift_toggle:
+                self.add_points_to_predictor = True
+            if key == ord("r") and self.shift_toggle:
+                self.propagate_anns_bool = True
+                print("Propagating annotations across frames...")
+                self.video_masks = self.propagate_anns_across_frames()
+                self.show_segmentation_mask = True
+            if key == ord("e"):
+                self.add_box_points_to_all_frames(self.common_box_pts[self.obj_id_num], self.obj_id_num, self.skip_frames_for_seg)
+            if key == ord("w") and self.shift_toggle:
+                self.reset_inference_state()
+                print("Inference state reset.")
+            if key == ord("t") and self.shift_toggle:
+                self.save_video_segmentation_masks()
+                
+
+        # Toggle shift key. This should be the last key to check
+        if key == 225:
+            self.shift_toggle = True
+            print('Shift key pressed.')
+        else:
+            self.shift_toggle = False
+
         return 0
+    
+    def save_video_segmentation_masks(self):
+        print('Saving video segmentation masks to data/daily_capture_thr_masks directory.')
+        
+        os.makedirs(os.path.join(self.workspace_path, 'data', 'daily_capture_thr_masks'), exist_ok=True)
+        for key in tqdm(self.video_masks.keys()):
+            i = int(key) * self.skip_frames_for_seg
+            frame_fname = self.get_img_fname(i).split('/')[-1]
+            thr_mask = self.video_masks[key]
+            max_id = np.max(thr_mask)
+            if os.path.exists(os.path.join(self.workspace_path, 'data', 'daily_capture_thr_masks', frame_fname)):
+                presaved_mask = np.load(os.path.join(self.workspace_path, 'data', 'daily_capture_thr_masks', frame_fname))['mask']
+                # Replace the locations where the new mask is not zero
+                ids_getting_replaced = np.unique(presaved_mask[thr_mask != 0]).tolist()
+                replaced_mask = presaved_mask.copy()
+                for id in ids_getting_replaced:
+                    replaced_mask[replaced_mask == id] = 0
+                thr_mask[replaced_mask != 0] = replaced_mask[replaced_mask != 0] + max_id
+            np.savez(os.path.join(self.workspace_path, 'data', 'daily_capture_thr_masks', frame_fname), mask=thr_mask)
+        
+    def read_thermal_segmentation_mask(self, frame_idx):
+        fname = self.get_img_fname(frame_idx)
+        fname_datetime = self.convert_filename_to_datetime(fname)
+        # Find the mask file with the closest datetime name
+        if self.all_thr_mask_names is None:
+            self.all_thr_mask_names = os.listdir(os.path.join(self.workspace_path, 'data', 'daily_capture_thr_masks'))
+        all_mask_names = [self.convert_filename_to_datetime(mask_name) for mask_name in self.all_thr_mask_names]
+        closest_mask_name = all_mask_names[np.argmin(np.abs(all_mask_names - fname_datetime))]
+        datetime_diff = np.abs(closest_mask_name - fname_datetime)
+        # Check if the time difference is less than 1 day
+        if datetime_diff > np.timedelta64(1, 'D'):
+            return None
+        mask = np.load(os.path.join(self.workspace_path, 'data', 'daily_capture_thr_masks', self.convert_datetime_to_filename(closest_mask_name)))
+        return mask['mask']
 
     def compute_homography(self, vis_img, thermal_img):
         # Use selected visible and thermal pixels to compute homography
@@ -164,7 +336,11 @@ class videoPlayerVisThermal():
             if self.warp_vis_img:
                 vis_img = skimage.transform.warp(vis_img.astype(np.uint8), self.thr2visH, output_shape=(512, 640))
                 vis_img = (vis_img*255).astype(np.uint8)
-            cv2.imshow("Visible Image",vis_img)
+            # if self.show_segmentation_mask:
+            #     masks = self.get_visible_segmentation_mask(vis_img)
+            #     vis_img = self.draw_segmentation_mask(vis_img, masks)
+            if self.show_visible:
+                cv2.imshow("Visible Image",vis_img)
 
         if thermal_img_raw is not None:
             minmax = (thermal_img_raw.min(),thermal_img_raw.max())
@@ -173,7 +349,32 @@ class videoPlayerVisThermal():
             if len(self.selected_pix_thermal)>0:
                 for i in range(len(self.selected_pix_thermal)):
                     cv2.drawMarker(thermal_img,self.selected_pix_thermal[i],(255,255,255),markerType=cv2.MARKER_STAR,markerSize=10,thickness=2)
-            cv2.imshow("Thermal Image",thermal_img)
+            if self.video_segmentation_mode:
+                if self.add_points_to_predictor:
+                    if len(self.video_ann_pts) > 0:
+                        print(f'Adding annotations to predictor...')
+                        obj_ids, obj_masks = self.add_anns_to_predictor(self.data_counter//self.skip_frames_for_seg, self.obj_id_num, self.video_ann_pts, self.video_ann_pts_label, \
+                                                                        box_pts=np.array(self.common_box_pts).flatten())
+                        thermal_img = self.overlay_object_masks(thermal_img, obj_masks, obj_ids)
+                    self.add_points_to_predictor = False
+                    self.video_ann_pts = []
+                    self.video_ann_pts_label = []
+                else:
+                    ann_color = [(255, 0, 0), (0, 255, 0)]
+                    for i in range(len(self.video_ann_pts)):
+                        cv2.drawMarker(thermal_img, tuple(self.video_ann_pts[i]), ann_color[self.video_ann_pts_label[i]], markerType=cv2.MARKER_STAR, markerSize=10, thickness=2)
+                    if self.common_box_pts is not None:
+                        for key in self.common_box_pts.keys():
+                            if len(self.common_box_pts[key]) == 2:
+                                cv2.rectangle(thermal_img, tuple(self.common_box_pts[key][0]), tuple(self.common_box_pts[key][1]), (255, 255, 255), 2)
+                            for i in range(len(self.common_box_pts[key])):
+                                cv2.drawMarker(thermal_img, tuple(self.common_box_pts[key][i]), (255, 255, 255), markerType=cv2.MARKER_STAR, markerSize=10, thickness=2)
+
+            if self.show_segmentation_mask:
+                thermal_img = self.draw_segmentation_mask(thermal_img)
+
+            if self.show_thermal:
+                cv2.imshow("Thermal Image",thermal_img)
         
         if self.overlay_vis_thr:
             thermal_img_jet = thermal_img_raw.copy()
@@ -222,6 +423,8 @@ class videoPlayerVisThermal():
                 
             # Update thermal image drawing the selected pixels. Add a star marker
             self.update_plot()
+        if event == cv2.EVENT_MOUSEMOVE:
+            self.mouse_location = [x, y]
 
     def mouse_callback_overlay(self,event,x,y,flags,param):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -231,6 +434,88 @@ class videoPlayerVisThermal():
             visible_coord = (visible_point_homogeneous[:2] / visible_point_homogeneous[2]).astype(int)
             self.selected_pix_vis.append((visible_coord[0], visible_coord[1]))
             self.update_plot()
+
+    def get_visible_segmentation_mask(self, vis_img):
+        # Check if the mask exists
+        if os.path.exists(os.path.join(self.workspace_path, 'data', 'misc', 'daily_capture_vis_masks', self.get_img_fname(self.data_counter))):
+            masks = np.load(os.path.join(self.workspace_path, 'data', 'misc', 'daily_capture_vis_masks', self.get_img_fname(self.data_counter)))
+        else:
+            masks = self.run_auto_img_mask_generator(vis_img)
+            print(len(masks))
+        return masks
+    
+    # def draw_segmentation_mask(self, vis_img, masks):
+        
+    #     if len(masks) == 0:
+    #         return vis_img
+    #     sorted_anns = sorted(masks, key=(lambda x: x['area']), reverse=True)
+
+    #     for ann in sorted_anns:
+    #         mask = ann['segmentation']
+    #         color_mask = np.zeros_like(vis_img)
+    #         random_color = (np.random.randint(0, 255), np.random.randint(0, 255), np.random.randint(0, 255))
+    #         color_mask[mask] = random_color
+    #         vis_img = cv2.addWeighted(vis_img, 1, color_mask, 0.5, 0)
+    #     return vis_img
+
+    def draw_segmentation_mask(self, thermal_img):
+        masks = None
+        if self.video_masks is not None:
+            if self.data_counter//self.skip_frames_for_seg in self.video_masks:
+                masks = self.video_masks[self.data_counter//self.skip_frames_for_seg]
+        else:
+            masks = self.read_thermal_segmentation_mask(self.data_counter)
+        if masks is not None:
+            unique_obj_ids = np.unique(masks)
+            plt_colors = plt.cm.get_cmap('tab20')(np.arange(len(unique_obj_ids)))
+            color_mask = np.zeros_like(thermal_img)
+            for i in range(len(unique_obj_ids)):
+                if unique_obj_ids[i] == 0:
+                    continue
+                mask = (masks == unique_obj_ids[i])
+                color_mask[mask] = plt_colors[i][:3] * 255
+            thermal_img = cv2.addWeighted(thermal_img, 0.5, color_mask, 0.5, 0)
+        return thermal_img
+    
+
+    def overlay_object_masks(self, thermal_img, obj_masks, obj_ids):
+        for i in range(len(obj_masks)):
+            mask = (obj_masks[i] > 0.0)[0]
+            color_mask = np.zeros_like(thermal_img)
+            # Get a color from a colormap given the object id
+            cmap_color = (np.array(plt.cm.get_cmap('tab20')(obj_ids[i]))[:3] * 255).astype(np.uint8)[::-1]
+            color_mask[mask] = cmap_color
+            thermal_img = cv2.addWeighted(thermal_img, 0.5, color_mask, 0.5, 0)
+        return thermal_img
+    
+    def save_thermal_frames_to_tmp(self):
+        if not self.saved_thermal_frames_tmp:
+            print('Saving thermal frames (1 for every self.skip_frames_for_seg frames) to tmp directory.')
+            # Delete tmp directory
+            if os.path.exists(os.path.join(self.workspace_path, 'data', 'tmp')):
+                os.system(f'rm -r {os.path.join(self.workspace_path, "data", "tmp")}')
+            os.makedirs(os.path.join(self.workspace_path, 'data', 'tmp'), exist_ok=True)
+            # Interleave 5 frames as default and save them to tmp directory
+            count = 0
+            for i in tqdm(range(0, self.N_frames, self.skip_frames_for_seg)):
+                vis_img, thermal_img = self.get_vis_thermal_img_func(i)
+                minmax = (thermal_img.min(),thermal_img.max())
+                thermal_img, _ = self.process_thermal_img_func(thermal_img, minmax=minmax)
+                cv2.imwrite(os.path.join(self.workspace_path, 'data', 'tmp', f'{count:05d}.jpeg'), thermal_img)
+                count += 1
+            self.saved_thermal_frames_tmp = True
+        else:
+            print('Thermal frames already saved to tmp directory.')
+        
+    def convert_filename_to_datetime(self, filename):
+        filename = filename.split('/')[-1].split('.')[0].split('_')
+        filename[1] = filename[1].replace('-', ':')
+        return np.datetime64(' '.join(filename))
+    
+    def convert_datetime_to_filename(self, datetime):
+        # Convert numpy datetime to string
+        datetime_str = str(datetime).replace('T', '_').replace(':', '-').replace(' ', '_')
+        return datetime_str + '.npz'
 
     def play_video(self,show_frame_number=True):
         try:
