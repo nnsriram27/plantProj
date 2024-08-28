@@ -6,3 +6,5 @@ sudo apt-get -y install ni-hwcfg-utility
 sudo dkms autoinstall
 ```
 
+## Pre-req for SAMV2
+- Requires having checkpoints in `./checkpoints` folder in the workspace directory.
