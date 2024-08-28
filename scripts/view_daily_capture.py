@@ -87,83 +87,10 @@ def get_thermal_img_func(frame_number):
     thermal_img = data['thermal_img']
     return thermal_img
 
-def read_pixel_values_for_allfiles(selected_pix_vis, selected_pix_thermal):
-    pix_value_vis = []
-    pix_value_thermal = []
-    pix_datetime = []
-    selected_pix_vis = np.array(selected_pix_vis)
-    selected_pix_thermal = np.array(selected_pix_thermal)
-    print(selected_pix_vis.shape, selected_pix_thermal.shape)
-    for i in range(N_frames):
-        try:
-            vis_img, thermal_img, img_datetime = get_vis_thermal_img_func(i, return_datetime=True)
-            pix_datetime.append(img_datetime)
-            if vis_img is not None:
-                pix_value_vis.append(vis_img[selected_pix_vis[:, 1],selected_pix_vis[:, 0]])
-            if thermal_img is not None:
-                pix_value_thermal.append(thermal_img[selected_pix_thermal[:, 1],selected_pix_thermal[:, 0]])
-        except Exception as e:
-            print(f'Error reading pixel values for frame {i}: {e}')
-            # Make sure the length of pix_value_vis and pix_value_thermal are the same
-            if len(pix_value_vis) != len(pix_value_thermal):
-                pix_value_vis = pix_value_vis[:min(len(pix_value_vis), len(pix_value_thermal))]
-                pix_value_thermal = pix_value_thermal[:min(len(pix_value_vis), len(pix_value_thermal))]
-            print(thermal_img.shape, vis_img.shape)
-    return np.stack(pix_value_vis), np.stack(pix_value_thermal), np.stack(pix_datetime)
-
-def plot_pixel_values_across_time(cls, selected_pix_vis, selected_pix_thermal):
-    pix_value_vis, pix_value_thermal, pix_datetime = read_pixel_values_for_allfiles(selected_pix_vis, selected_pix_thermal)
-    print(pix_value_vis.shape, pix_value_thermal.shape, pix_datetime.shape)
-
-    if cls.pixel_plot_fig is None:
-        # Create new subplots if figure doesn't exist
-        cls.pixel_plot_fig = make_subplots(rows=2, cols=1, subplot_titles=('Visible Camera Pixel Values', 'Thermal Camera Pixel Values'))
-
-    # Add traces for visible camera pixel values
-    if pix_value_vis.size != 0:
-        for i in range(cls.pixel_plot_counter, pix_value_vis.shape[1]):
-            cls.pixel_plot_fig.add_trace(
-                go.Scatter(x=pix_datetime, y=pix_value_vis[:, i], name=f'Pixel {selected_pix_vis[i]}',
-                           hovertemplate='<b>Date Time</b>: %{x}<br>' +
-                                         '<b>Pixel Value</b>: %{y}<br>' +
-                                         '<b>Pixel</b>: ' + str(selected_pix_vis[i])),
-                row=1, col=1
-            )
-    
-    # Add traces for thermal camera pixel values
-    if pix_value_thermal.size != 0:
-        for i in range(cls.pixel_plot_counter, pix_value_thermal.shape[1]):
-            cls.pixel_plot_fig.add_trace(
-                go.Scatter(x=pix_datetime, y=pix_value_thermal[:, i], name=f'Pixel {selected_pix_thermal[i]}',
-                           hovertemplate='<b>Date Time</b>: %{x}<br>' +
-                                         '<b>Pixel Value</b>: %{y}<br>' +
-                                         '<b>Pixel</b>: ' + str(selected_pix_thermal[i])),
-                row=2, col=1
-            )
-    cls.pixel_plot_counter = max(pix_value_vis.shape[1], pix_value_thermal.shape[1])
-    
-    # Update layout
-    cls.pixel_plot_fig.update_layout(
-        height=800,
-        width=1200,
-        title_text="Pixel Values Across Time",
-        hovermode="x unified"
-    )
-    
-    # Update x and y axis labels
-    cls.pixel_plot_fig.update_xaxes(title_text="Date Time", row=1, col=1)
-    cls.pixel_plot_fig.update_xaxes(title_text="Date Time", row=2, col=1)
-    cls.pixel_plot_fig.update_yaxes(title_text="Pixel Value", row=1, col=1)
-    cls.pixel_plot_fig.update_yaxes(title_text="Pixel Value", row=2, col=1)
-    
-    # Show the plot
-    cls.pixel_plot_fig.show()
-
 @classmethod
 def get_img_fname(cls, data_counter):
     return npz_files[data_counter].split('/')[-1]
 
-videoPlayerVisThermal.plot_pixel_values_across_time = plot_pixel_values_across_time
 videoPlayerVisThermal.get_img_fname = get_img_fname
     
 player = videoPlayerVisThermal(N_frames, get_vis_thermal_img_func, thr2Vis_HMatrix=H_thr2vis, workspace_path=workspace_path)
