@@ -53,9 +53,12 @@ class videoPlayerVisThermal():
         self.video_masks = None
         self.all_thr_mask_names = None
 
-        self.common_box_pts = None
+        self.common_box_pts_thermal = None
+        self.common_box_pts_visible = None
         self.video_ann_pts = []
         self.video_ann_pts_label = []
+        self.thermal_colormap = cv2.COLORMAP_INFERNO
+        self.obj_id_num = 1
 
     def plot_pixel_values_across_time(self, selected_pix_vis, selected_pix_thermal):
         pass
@@ -108,12 +111,24 @@ class videoPlayerVisThermal():
                 self.video_ann_pts = []
                 self.video_ann_pts_label = []
 
-        elif key==32:
+        elif key==32 and not self.shift_toggle:
             if self.thermal_minmax is not None:
                 self.thermal_minmax = None
             else:
                 vis_img_raw, thermal_img = self.get_vis_thermal_img_func(self.data_counter)
                 self.thermal_minmax = (thermal_img.min(),thermal_img.max())
+        elif key==32 and self.shift_toggle:
+            # Normalize within the selected common box pts and update the thermal minmax 
+            if self.common_box_pts is not None:
+                vis_img_raw, thermal_img = self.get_vis_thermal_img_func(self.data_counter)
+                if len(self.common_box_pts[self.obj_id_num]) == 2:
+                    box_pts = np.array(self.common_box_pts[self.obj_id_num]).flatten()
+                    thermal_img = thermal_img[box_pts[1]:box_pts[3], box_pts[0]:box_pts[2]]
+                    self.thermal_minmax = (thermal_img.min(),thermal_img.max())
+                    print(f'Thermal minmax updated to {self.thermal_minmax}')
+                else:
+                    print('Select a common box first.')
+
         elif key==ord("w"):
             if self.thr2visH is not None:
                 self.warp_vis_img = not self.warp_vis_img
@@ -158,6 +173,7 @@ class videoPlayerVisThermal():
             self.alpha = min(max(self.alpha, 0.0), 1.0)
         elif key == ord("h") and not self.shift_toggle:
             self.homography_mode = not self.homography_mode
+            print('Homography mode:', self.homography_mode)
             if self.homography_mode:
                 self.selected_pix_vis = []
                 self.selected_pix_thermal = []
@@ -170,10 +186,17 @@ class videoPlayerVisThermal():
                 np.savez(save_path, H_boson2bfly=self.thr2visH)
         
         elif key == ord("p"):
-            if not self.show_segmentation_mask:
-                self.plot_pixel_values_across_time(self.selected_pix_vis, self.selected_pix_thermal)
-            else:
-                self.plot_obj_pixel_values_across_time(self.selected_thr_mask_id)
+            selected_items = {}
+            if not self.show_segmentation_mask and len(self.selected_pix_vis) > 0 and len(self.selected_pix_thermal) > 0:
+                selected_items['pix_visible'] = self.selected_pix_vis
+                selected_items['pix_thermal'] = self.selected_pix_thermal
+            elif not self.show_segmentation_mask and self.common_box_pts_thermal is not None:
+                selected_items['box_pts_thermal'] = self.common_box_pts_thermal
+                selected_items['box_pts_visible'] = self.common_box_pts_visible
+            elif self.show_segmentation_mask:
+                selected_items['obj_ids'] = self.selected_thr_mask_id
+            if len(selected_items) > 0:
+                self.plot_pixel_values_across_time(selected_items)
 
         elif key == ord("m"):
             self.show_segmentation_mask = not self.show_segmentation_mask
@@ -201,7 +224,6 @@ class videoPlayerVisThermal():
             if self.video_segmentation_mode:
                 print("Going to samv2 segmentation mode")
                 self.save_thermal_frames_to_tmp()
-                self.obj_id_num = 1
                 self.show_segmentation_mask = True
                 self.initialize_segmentation_predictor()
                 print("First use 'g' to add a common box points. Then press 'e' to add box points to all frames.")
@@ -216,34 +238,47 @@ class videoPlayerVisThermal():
         if key == ord("h") and self.shift_toggle:
             print(self.loop_control.__doc__)
 
+        if key == ord("4"):
+            self.obj_id_num -= 1
+            self.obj_id_num = max(self.obj_id_num, 1)
+            # self.update_plot()
+            print(f'Object id number: {self.obj_id_num}')
+        elif key == ord("6"):
+            self.obj_id_num += 1
+            self.obj_id_num = max(self.obj_id_num, 1)
+            # self.update_plot()
+            print(f'Object id number: {self.obj_id_num}')
+
+        elif key == ord("g") and not self.shift_toggle:
+            if self.common_box_pts_thermal is None:
+                self.common_box_pts_thermal = {}
+                self.common_box_pts_visible = {}
+                self.common_box_pts_thermal[self.obj_id_num] = []
+                self.common_box_pts_visible[self.obj_id_num] = []
+            elif self.obj_id_num not in self.common_box_pts_thermal.keys():
+                self.common_box_pts_thermal[self.obj_id_num] = []
+                self.common_box_pts_visible[self.obj_id_num] = []
+            elif len(self.common_box_pts_thermal[self.obj_id_num]) == 2:
+                self.common_box_pts_thermal[self.obj_id_num].pop(0)
+                self.common_box_pts_visible[self.obj_id_num].pop(0)
+            self.common_box_pts_thermal[self.obj_id_num].append(self.mouse_location)
+            if self.thr2visH is not None:
+                thermal_point_homogeneous = np.array([self.mouse_location[0], self.mouse_location[1],1])
+                visible_point_homogeneous = np.dot(self.thr2visH, thermal_point_homogeneous)
+                visible_coord = (visible_point_homogeneous[:2] / visible_point_homogeneous[2]).astype(int)
+                self.common_box_pts_visible[self.obj_id_num].append((visible_coord[0], visible_coord[1]))
+        elif key == ord("g") and self.shift_toggle:
+            self.common_box_pts_thermal[self.obj_id_num] = []
+            self.common_box_pts_visible[self.obj_id_num] = []
+
         if self.video_segmentation_mode:
             # print("Entering video loop")
-            if key == ord("4"):
-                self.obj_id_num += 1
-                self.add_points_to_predictor = True
-                # self.update_plot()
-                print(f'Object id number: {self.obj_id_num}')
-            if key == ord("6"):
-                self.obj_id_num -= 1
-                self.obj_id_num = max(self.obj_id_num, 1)
-                self.add_points_to_predictor = True
-                # self.update_plot()
-                print(f'Object id number: {self.obj_id_num}')
             if key == ord("f"):
                 self.video_ann_pts.append(self.mouse_location)
                 self.video_ann_pts_label.append(1)
             if key == ord("b"):
                 self.video_ann_pts.append(self.mouse_location)
                 self.video_ann_pts_label.append(0)
-            if key == ord("g") and not self.shift_toggle:
-                if self.common_box_pts is None:
-                    self.common_box_pts = {}
-                    self.common_box_pts[self.obj_id_num] = []
-                if len(self.common_box_pts[self.obj_id_num]) == 2:
-                    self.common_box_pts[self.obj_id_num].pop(0)
-                self.common_box_pts[self.obj_id_num].append(self.mouse_location)
-            if key == ord("g") and self.shift_toggle:
-                self.common_box_pts[self.obj_id_num] = []
             if key == ord("c"):
                 self.video_ann_pts = []
                 self.video_ann_pts_label = []
@@ -255,7 +290,7 @@ class videoPlayerVisThermal():
                 self.video_masks = self.propagate_anns_across_frames()
                 self.show_segmentation_mask = True
             if key == ord("e"):
-                self.add_box_points_to_all_frames(self.common_box_pts[self.obj_id_num], self.obj_id_num, self.skip_frames_for_seg)
+                self.add_box_points_to_all_frames(self.common_box_pts_thermal[self.obj_id_num], self.obj_id_num, self.skip_frames_for_seg)
             if key == ord("w") and self.shift_toggle:
                 self.reset_inference_state()
                 print("Inference state reset.")
@@ -346,12 +381,21 @@ class videoPlayerVisThermal():
             # if self.show_segmentation_mask:
             #     masks = self.get_visible_segmentation_mask(vis_img)
             #     vis_img = self.draw_segmentation_mask(vis_img, masks)
+            if self.common_box_pts_visible is not None:
+                pltcmap = plt.cm.get_cmap('tab20')
+                for key in self.common_box_pts_visible.keys():
+                    if len(self.common_box_pts_visible[key]) == 2:
+                        cv2.rectangle(vis_img, tuple(self.common_box_pts_visible[key][0]), tuple(self.common_box_pts_visible[key][1]), (255, 255, 255), 2)
+                    for i in range(len(self.common_box_pts_visible[key])):
+                        pltcmap_color = (np.array(pltcmap(key)[:3][::-1]) * 255).astype(np.uint8).tolist()
+                        cv2.drawMarker(vis_img, tuple(self.common_box_pts_visible[key][i]), tuple(pltcmap_color), markerType=cv2.MARKER_STAR, markerSize=10, thickness=2)
+
             if self.show_visible:
                 cv2.imshow("Visible Image",vis_img)
 
         if thermal_img_raw is not None:
             minmax = (thermal_img_raw.min(),thermal_img_raw.max())
-            thermal_img, _ = self.process_thermal_img_func(thermal_img_raw, minmax=self.thermal_minmax)
+            thermal_img, _ = self.process_thermal_img_func(thermal_img_raw, minmax=self.thermal_minmax, colormap=self.thermal_colormap)
             thermal_img = self.additional_thermal_processing(thermal_img, minmax)
             if len(self.selected_pix_thermal)>0:
                 for i in range(len(self.selected_pix_thermal)):
@@ -361,7 +405,7 @@ class videoPlayerVisThermal():
                     if len(self.video_ann_pts) > 0:
                         print(f'Adding annotations to predictor...')
                         obj_ids, obj_masks = self.add_anns_to_predictor(self.data_counter//self.skip_frames_for_seg, self.obj_id_num, self.video_ann_pts, self.video_ann_pts_label, \
-                                                                        box_pts=np.array(self.common_box_pts[self.obj_id_num]).flatten())
+                                                                        box_pts=np.array(self.common_box_pts_thermal[self.obj_id_num]).flatten())
                         thermal_img = self.overlay_object_masks(thermal_img, obj_masks, obj_ids)
                     self.add_points_to_predictor = False
                     self.video_ann_pts = []
@@ -370,12 +414,14 @@ class videoPlayerVisThermal():
                     ann_color = [(255, 0, 0), (0, 255, 0)]
                     for i in range(len(self.video_ann_pts)):
                         cv2.drawMarker(thermal_img, tuple(self.video_ann_pts[i]), ann_color[self.video_ann_pts_label[i]], markerType=cv2.MARKER_STAR, markerSize=10, thickness=2)
-                    if self.common_box_pts is not None:
-                        for key in self.common_box_pts.keys():
-                            if len(self.common_box_pts[key]) == 2:
-                                cv2.rectangle(thermal_img, tuple(self.common_box_pts[key][0]), tuple(self.common_box_pts[key][1]), (255, 255, 255), 2)
-                            for i in range(len(self.common_box_pts[key])):
-                                cv2.drawMarker(thermal_img, tuple(self.common_box_pts[key][i]), (255, 255, 255), markerType=cv2.MARKER_STAR, markerSize=10, thickness=2)
+            if self.common_box_pts_thermal is not None:
+                pltcmap = plt.cm.get_cmap('tab20')
+                for key in self.common_box_pts_thermal.keys():
+                    if len(self.common_box_pts_thermal[key]) == 2:
+                        cv2.rectangle(thermal_img, tuple(self.common_box_pts_thermal[key][0]), tuple(self.common_box_pts_thermal[key][1]), (255, 255, 255), 2)
+                    for i in range(len(self.common_box_pts_thermal[key])):
+                        pltcmap_color = (np.array(pltcmap(key)[:3][::-1]) * 255).astype(np.uint8).tolist()
+                        cv2.drawMarker(thermal_img, tuple(self.common_box_pts_thermal[key][i]), tuple(pltcmap_color), markerType=cv2.MARKER_STAR, markerSize=10, thickness=2)
 
             if self.show_segmentation_mask:
                 thermal_img = self.draw_segmentation_mask_thermal(thermal_img)
@@ -416,11 +462,16 @@ class videoPlayerVisThermal():
 
             # Update vis image drawing the selected pixels. Add a star marker
             self.update_plot()
-
     
     def mouse_callback_thermal(self,event,x,y,flags,param):
         if event == cv2.EVENT_LBUTTONDOWN:
-            if not self.show_segmentation_mask:
+            select_pix = True
+            if self.show_segmentation_mask:
+                segmask = self.read_thermal_segmentation_mask(self.data_counter)
+                if segmask is not None and segmask[y, x] not in self.selected_thr_mask_id and segmask[y, x] != 0:
+                    self.selected_thr_mask_id.append(segmask[y, x])
+                    select_pix = False 
+            if select_pix:
                 self.selected_pix_thermal.append((x,y))
                 # Convert pix coordinate in thermal to pix coordinate in visible given thr2vis homography
                 if self.thr2visH is not None and not self.homography_mode:
@@ -428,14 +479,11 @@ class videoPlayerVisThermal():
                     visible_point_homogeneous = np.dot(self.thr2visH, thermal_point_homogeneous)
                     visible_coord = (visible_point_homogeneous[:2] / visible_point_homogeneous[2]).astype(int)
                     self.selected_pix_vis.append((visible_coord[0], visible_coord[1]))
-            else:
-                segmask = self.read_thermal_segmentation_mask(self.data_counter)
-                if segmask is not None:
-                    self.selected_thr_mask_id.append(segmask[y, x])
-                
+
             # Update thermal image drawing the selected pixels. Add a star marker
             self.update_plot()
         if event == cv2.EVENT_MOUSEMOVE:
+            self.mouse_over_thermal = True
             self.mouse_location = [x, y]
 
     def mouse_callback_overlay(self,event,x,y,flags,param):
@@ -527,7 +575,7 @@ class videoPlayerVisThermal():
             for i in tqdm(range(0, self.N_frames, self.skip_frames_for_seg)):
                 vis_img, thermal_img = self.get_vis_thermal_img_func(i)
                 minmax = (thermal_img.min(),thermal_img.max())
-                thermal_img, _ = self.process_thermal_img_func(thermal_img, minmax=minmax)
+                thermal_img, _ = self.process_thermal_img_func(thermal_img, minmax=minmax, colormap=self.thermal_colormap)
                 cv2.imwrite(os.path.join(self.workspace_path, 'data', 'tmp', f'{count:05d}.jpeg'), thermal_img)
                 count += 1
             self.saved_thermal_frames_tmp = True
@@ -543,150 +591,96 @@ class videoPlayerVisThermal():
         # Convert numpy datetime to string
         datetime_str = str(datetime).replace('T', '_').replace(':', '-').replace(' ', '_')
         return datetime_str + '.npz'
+    
+    def read_pixel_values_for_allfiles(self, selected_items):
+        print("Reading pixel values for plotting....")
+        if 'pix_thermal' in selected_items:
+            thermal_values_obj_id = { pix_value: [] for pix_value in selected_items['pix_thermal']}
+            obj_id_datetime = { pix_value: [] for pix_value in selected_items['pix_thermal']}
+            if 'pix_visible' in selected_items:
+                vis_values_obj_id = { pix_value: [] for pix_value in selected_items['pix_thermal']}
+        elif 'obj_ids' in selected_items:
+            thermal_values_obj_id = { obj_id : [] for obj_id in selected_items['obj_ids']}
+            vis_values_obj_id = { obj_id : [] for obj_id in selected_items['obj_ids']}
+            obj_id_datetime = { obj_id : [] for obj_id in selected_items['obj_ids']}
+        elif 'box_pts_thermal' in selected_items:
+            thermal_values_obj_id = { obj_id : [] for obj_id in selected_items['box_pts_thermal'].keys()}
+            vis_values_obj_id = { obj_id : [] for obj_id in selected_items['box_pts_thermal'].keys()}
+            obj_id_datetime = { obj_id : [] for obj_id in selected_items['box_pts_thermal'].keys()}
 
-    def read_pixel_values_for_allfiles(self, selected_pix_vis, selected_pix_thermal):
-        pix_value_vis = []
-        pix_value_thermal = []
-        pix_datetime = []
-        selected_pix_vis = np.array(selected_pix_vis)
-        selected_pix_thermal = np.array(selected_pix_thermal)
-        print(selected_pix_vis.shape, selected_pix_thermal.shape)
         for i in range(self.N_frames):
             try:
                 vis_img, thermal_img, img_datetime = self.get_vis_thermal_img_func(i, return_datetime=True)
-                pix_datetime.append(img_datetime)
                 if vis_img is not None:
                     vis_img = self.process_vis_img_func(vis_img)
-                    pix_value_vis.append(vis_img[selected_pix_vis[:, 1],selected_pix_vis[:, 0]])
-                if thermal_img is not None:
-                    pix_value_thermal.append(thermal_img[selected_pix_thermal[:, 1],selected_pix_thermal[:, 0]])
-            except Exception as e:
-                print(f'Error reading pixel values for frame {i}: {e}')
-                # Make sure the length of pix_value_vis and pix_value_thermal are the same
-                if len(pix_value_vis) != len(pix_value_thermal):
-                    pix_value_vis = pix_value_vis[:min(len(pix_value_vis), len(pix_value_thermal))]
-                    pix_value_thermal = pix_value_thermal[:min(len(pix_value_vis), len(pix_value_thermal))]
-                print(thermal_img.shape, vis_img.shape)
-        return np.stack(pix_value_vis), np.stack(pix_value_thermal), np.stack(pix_datetime)
-
-
-    def plot_pixel_values_across_time(self, selected_pix_vis, selected_pix_thermal):
-        pix_value_vis, pix_value_thermal, pix_datetime = self.read_pixel_values_for_allfiles(selected_pix_vis, selected_pix_thermal)
-        print(pix_value_vis.shape, pix_value_thermal.shape, pix_datetime.shape)
-
-        if self.pixel_plot_fig is None:
-            # Create new subplots if figure doesn't exist
-            self.pixel_plot_fig = make_subplots(rows=2, cols=2, 
-                                            subplot_titles=('Blue Channel', 'Green Channel', 'Red Channel', 'Thermal Camera Pixel Values'))
-            self.pixel_plot_counter = 0
-
-        colors = ['blue', 'green', 'red']
-        
-        # Add traces for visible camera BGR pixel values
-        if pix_value_vis.size != 0:
-            for i in range(self.pixel_plot_counter, pix_value_vis.shape[1]):
-                for j, color in enumerate(colors):
-                    self.pixel_plot_fig.add_trace(
-                        go.Scatter(x=pix_datetime, y=pix_value_vis[:, i, j], 
-                                name=f'Pixel {selected_pix_vis[i]}',
-                                hovertemplate='<b>Date Time</b>: %{x}<br>' +
-                                                f'<b>{color.capitalize()} Value</b>: %{{y}}<br>' +
-                                                '<b>Pixel</b>: ' + str(selected_pix_vis[i])),
-                        row=int(j/2)+1, col=(j%2)+1
-                    )
-
-        # Add traces for thermal camera pixel values
-        if pix_value_thermal.size != 0:
-            for i in range(self.pixel_plot_counter, pix_value_thermal.shape[1]):
-                self.pixel_plot_fig.add_trace(
-                    go.Scatter(x=pix_datetime, y=pix_value_thermal[:, i], 
-                            name=f'Pixel {selected_pix_thermal[i]}',
-                            hovertemplate='<b>Date Time</b>: %{x}<br>' +
-                                            '<b>Pixel Value</b>: %{y}<br>' +
-                                            '<b>Pixel</b>: ' + str(selected_pix_thermal[i])),
-                    row=2, col=2
-                )
-
-        self.pixel_plot_counter = max(pix_value_vis.shape[1], pix_value_thermal.shape[1])
-        
-        # Update layout
-        self.pixel_plot_fig.update_layout(
-            title_text="Pixel Values Across Time",
-            hovermode="x unified"
-        )
-        
-        # Update x and y axis labels
-        for i in range(4):
-            self.pixel_plot_fig.update_xaxes(title_text="Date Time", row=i+1, col=1)
-            if i < 3:
-                self.pixel_plot_fig.update_yaxes(title_text=f"{colors[i].capitalize()} Value", row=i+1, col=1)
-            else:
-                self.pixel_plot_fig.update_yaxes(title_text="Thermal Value", row=i+1, col=1)
-
-        # Show the plot
-        self.pixel_plot_fig.show()
-    
-    def read_mean_obj_id_values_allfiles(self, selected_obj_ids):
-        print("Reading pixel values for plotting....")
-        vis_values_obj_id = {obj_id : [] for obj_id in selected_obj_ids}
-        thermal_values_obj_id = {obj_id : [] for obj_id in selected_obj_ids}
-        obj_id_datetime = {obj_id : [] for obj_id in selected_obj_ids}
-        for i in tqdm(range(self.N_frames)):
-            try:
-                vis_img, thermal_img, img_datetime = self.get_vis_thermal_img_func(i, return_datetime=True)
-                if vis_img is not None:
-                    vis_img = self.process_vis_img_func(vis_img)
-                thr_mask = self.read_thermal_segmentation_mask(i)
-                if self.thr2visH is not None:
-                    vis_mask = self.get_vis_mask_from_thr_mask(thr_mask, vis_img.shape[:2])
-                if thr_mask is not None:
-                    unique_obj_ids = np.unique(thr_mask).tolist()
-                    for obj_id in selected_obj_ids:
-                        if obj_id in unique_obj_ids:
-                            if self.thr2visH is not None:
-                                vis_values_obj_id[obj_id].append(np.mean(vis_img[vis_mask == obj_id], axis=0))
-                            thermal_values_obj_id[obj_id].append(np.mean(thermal_img[thr_mask == obj_id]))
+                if 'pix_thermal' in selected_items:
+                    for pix_value in selected_items['pix_thermal']:
+                        thermal_values_obj_id[pix_value].append(thermal_img[pix_value[1], pix_value[0]])
+                        obj_id_datetime[pix_value].append(img_datetime)
+                    if 'pix_visible' in selected_items:
+                        for pix_value_vis, pix_value_thermal in zip(selected_items['pix_visible'], selected_items['pix_thermal']):
+                            vis_values_obj_id[pix_value_thermal].append(vis_img[pix_value_vis[1], pix_value_vis[0]])
+                elif 'obj_ids' in selected_items:
+                    thr_mask = self.read_thermal_segmentation_mask(i)
+                    if self.thr2visH is not None:
+                        vis_mask = self.get_vis_mask_from_thr_mask(thr_mask, vis_img.shape[:2])
+                    if thr_mask is not None:
+                        unique_obj_ids = np.unique(thr_mask).tolist()
+                        for obj_id in selected_items['obj_ids']:
+                            if obj_id in unique_obj_ids:
+                                if self.thr2visH is not None:
+                                    vis_values_obj_id[obj_id].append(np.mean(vis_img[vis_mask == obj_id], axis=0))
+                                thermal_values_obj_id[obj_id].append(np.mean(thermal_img[thr_mask == obj_id]))
+                                obj_id_datetime[obj_id].append(img_datetime)
+                elif 'box_pts_thermal' in selected_items:
+                    for obj_id in selected_items['box_pts_thermal'].keys():
+                        box_pts_thermal = selected_items['box_pts_thermal'][obj_id]
+                        box_pts_vis = selected_items['box_pts_visible'][obj_id]
+                        if len(box_pts_thermal) == 2:
+                            box_pts_thermal = np.array(box_pts_thermal).flatten()
+                            box_pts_vis = np.array(box_pts_vis).flatten()
+                            thermal_values_obj_id[obj_id].append(np.mean(thermal_img[box_pts_thermal[1]:box_pts_thermal[3], box_pts_thermal[0]:box_pts_thermal[2]]))
+                            vis_values_obj_id[obj_id].append(np.mean(vis_img[box_pts_vis[1]:box_pts_vis[3], box_pts_vis[0]:box_pts_vis[2]], axis=(0, 1)))
                             obj_id_datetime[obj_id].append(img_datetime)
+
             except Exception as e:
                 print(f'Error reading pixel values for frame {i}: {e}')
-        for obj_id in selected_obj_ids:
-            if self.thr2visH is not None:
-                vis_values_obj_id[obj_id] = np.stack(vis_values_obj_id[obj_id])
-            thermal_values_obj_id[obj_id] = np.array(thermal_values_obj_id[obj_id])
-            obj_id_datetime[obj_id] = np.array(obj_id_datetime[obj_id])
+        
+        for key in thermal_values_obj_id.keys():
+            thermal_values_obj_id[key] = np.stack(thermal_values_obj_id[key])
+            obj_id_datetime[key] = np.stack(obj_id_datetime[key])
+            vis_values_obj_id[key] = np.stack(vis_values_obj_id[key])
         return vis_values_obj_id, thermal_values_obj_id, obj_id_datetime
 
-    def plot_obj_pixel_values_across_time(self, selected_obj_ids):
-        vis_values_obj_id, thermal_values_obj_id, obj_id_datetime = self.read_mean_obj_id_values_allfiles(selected_obj_ids)
+    def plot_pixel_values_across_time(self, selected_items):
+        vis_values_obj_id, thermal_values_obj_id, obj_id_datetime = self.read_pixel_values_for_allfiles(selected_items)
         # print(vis_values_obj_id.keys(), thermal_values_obj_id.keys(), obj_id_datetime.keys())
         obj_plot_fig = make_subplots(rows=2, cols=2, subplot_titles=('Blue Channel', 'Green Channel', 'Red Channel', 'Thermal Camera Object Values'))
 
         colors = ['blue', 'green', 'red']
-        for obj_id in selected_obj_ids:
+        for obj_id in thermal_values_obj_id.keys():
             if self.thr2visH is not None:
                 print("Vis values shape:", vis_values_obj_id[obj_id].shape)
                 for j, color in enumerate(colors):
                     obj_plot_fig.add_trace(
                         go.Scatter(x=obj_id_datetime[obj_id], y=vis_values_obj_id[obj_id][:, j], 
-                                name=f'Object {obj_id}',
+                                name=f'Item {obj_id}',
                                 hovertemplate='<b>Date Time</b>: %{x}<br>' +
-                                                f'<b>{color.capitalize()} Value</b>: %{{y}}<br>' +
-                                                '<b>Object</b>: ' + str(obj_id)),
+                                                f'<b>{color.capitalize()} Value</b>: %{{y}}<br>'),
                         row=int(j/2)+1, col=(j%2)+1
                     )
             print("Thermal values shape:", thermal_values_obj_id[obj_id].shape)
             obj_plot_fig.add_trace(
                 go.Scatter(x=obj_id_datetime[obj_id], y=thermal_values_obj_id[obj_id], 
-                        name=f'Object {obj_id}',
+                        name=f'Item {obj_id}',
                         hovertemplate='<b>Date Time</b>: %{x}<br>' +
-                                        '<b>Object Value</b>: %{y}<br>' +
-                                        '<b>Object</b>: ' + str(obj_id)),
+                                        '<b>Item Value</b>: %{y}<br>'),
                 row=2, col=2
             )
 
         # Update layout
         obj_plot_fig.update_layout(
-            title_text="Object Values Across Time",
+            title_text="Selected Item Values Across Time",
             hovermode="x unified"
         )
 
