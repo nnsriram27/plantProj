@@ -170,7 +170,10 @@ class videoPlayerVisThermal():
                 np.savez(save_path, H_boson2bfly=self.thr2visH)
         
         elif key == ord("p"):
-            self.plot_pixel_values_across_time(self.selected_pix_vis, self.selected_pix_thermal)
+            if not self.show_segmentation_mask:
+                self.plot_pixel_values_across_time(self.selected_pix_vis, self.selected_pix_thermal)
+            else:
+                self.plot_obj_pixel_values_across_time(self.selected_thr_mask_id)
 
         elif key == ord("m"):
             self.show_segmentation_mask = not self.show_segmentation_mask
@@ -234,6 +237,7 @@ class videoPlayerVisThermal():
                 self.video_ann_pts_label.append(0)
             if key == ord("g") and not self.shift_toggle:
                 if self.common_box_pts is None:
+                    self.common_box_pts = {}
                     self.common_box_pts[self.obj_id_num] = []
                 if len(self.common_box_pts[self.obj_id_num]) == 2:
                     self.common_box_pts[self.obj_id_num].pop(0)
@@ -357,7 +361,7 @@ class videoPlayerVisThermal():
                     if len(self.video_ann_pts) > 0:
                         print(f'Adding annotations to predictor...')
                         obj_ids, obj_masks = self.add_anns_to_predictor(self.data_counter//self.skip_frames_for_seg, self.obj_id_num, self.video_ann_pts, self.video_ann_pts_label, \
-                                                                        box_pts=np.array(self.common_box_pts).flatten())
+                                                                        box_pts=np.array(self.common_box_pts[self.obj_id_num]).flatten())
                         thermal_img = self.overlay_object_masks(thermal_img, obj_masks, obj_ids)
                     self.add_points_to_predictor = False
                     self.video_ann_pts = []
@@ -451,6 +455,17 @@ class videoPlayerVisThermal():
             masks = self.run_auto_img_mask_generator(vis_img)
             print(len(masks))
         return masks
+    
+    def get_vis_mask_from_thr_mask(self, thr_mask, vis_img_shape):
+        # Use the homography matrix to convert the thermal mask to visible mask
+        vis_mask = np.zeros(vis_img_shape)
+        non_zero_locs = np.where(thr_mask != 0)
+        thr_locs_homogeneous = np.vstack((non_zero_locs[1], non_zero_locs[0], np.ones_like(non_zero_locs[0])))
+        vis_locs_homogeneous = np.dot(self.thr2visH, thr_locs_homogeneous)
+        vis_locs = (vis_locs_homogeneous[:2] / vis_locs_homogeneous[2]).astype(int)
+        vis_mask[vis_locs[1], vis_locs[0]] = thr_mask[non_zero_locs]
+        return vis_mask
+
     
     # def draw_segmentation_mask(self, vis_img, masks):
         
@@ -611,33 +626,81 @@ class videoPlayerVisThermal():
         # Show the plot
         self.pixel_plot_fig.show()
     
-    # def read_mean_obj_id_values_allfiles(self, selected_obj_ids):
-    #     vis_values_obj_id = {obj_id : [] for obj_id in selected_obj_ids}
-    #     thermal_values_obj_id = {obj_id : [] for obj_id in selected_obj_ids}
-    #     obj_id_datetime = {obj_id : [] for obj_id in selected_obj_ids}
-    #     for i in range(self.N_frames):
-    #         try:
-    #             vis_img, thermal_img, img_datetime = self.get_vis_thermal_img_func(i, return_datetime=True)
-    #             if vis_img is not None:
-    #                 vis_img = self.process_vis_img_func(vis_img)
-    #             mask = self.read_thermal_segmentation_mask(i)
-    #             if self.thr2visH is not None:
-    #                 vis_mask = self.get_visible_mask_from_thermal(mask)
-    #             if mask is not None:
-    #                 unique_obj_ids = np.unique(mask).tolist()
-    #                 for obj_id in selected_obj_ids:
-    #                     if obj_id in unique_obj_ids:
-    #                         if self.thr2visH is not None:
-    #                             vis_values_obj_id[obj_id].append(np.mean(vis_img[vis_mask == obj_id], axis=0))
-    #                         thermal_values_obj_id[obj_id].append(np.mean(thermal_img[mask == obj_id]))
-    #                         obj_id_datetime[obj_id].append(img_datetime)
-    #         except Exception as e:
-    #             print(f'Error reading pixel values for frame {i}: {e}')
-    #     return vis_values_obj_id, thermal_values_obj_id, obj_id_datetime
+    def read_mean_obj_id_values_allfiles(self, selected_obj_ids):
+        print("Reading pixel values for plotting....")
+        vis_values_obj_id = {obj_id : [] for obj_id in selected_obj_ids}
+        thermal_values_obj_id = {obj_id : [] for obj_id in selected_obj_ids}
+        obj_id_datetime = {obj_id : [] for obj_id in selected_obj_ids}
+        for i in tqdm(range(self.N_frames)):
+            try:
+                vis_img, thermal_img, img_datetime = self.get_vis_thermal_img_func(i, return_datetime=True)
+                if vis_img is not None:
+                    vis_img = self.process_vis_img_func(vis_img)
+                thr_mask = self.read_thermal_segmentation_mask(i)
+                if self.thr2visH is not None:
+                    vis_mask = self.get_vis_mask_from_thr_mask(thr_mask, vis_img.shape[:2])
+                if thr_mask is not None:
+                    unique_obj_ids = np.unique(thr_mask).tolist()
+                    for obj_id in selected_obj_ids:
+                        if obj_id in unique_obj_ids:
+                            if self.thr2visH is not None:
+                                vis_values_obj_id[obj_id].append(np.mean(vis_img[vis_mask == obj_id], axis=0))
+                            thermal_values_obj_id[obj_id].append(np.mean(thermal_img[thr_mask == obj_id]))
+                            obj_id_datetime[obj_id].append(img_datetime)
+            except Exception as e:
+                print(f'Error reading pixel values for frame {i}: {e}')
+        for obj_id in selected_obj_ids:
+            if self.thr2visH is not None:
+                vis_values_obj_id[obj_id] = np.stack(vis_values_obj_id[obj_id])
+            thermal_values_obj_id[obj_id] = np.array(thermal_values_obj_id[obj_id])
+            obj_id_datetime[obj_id] = np.array(obj_id_datetime[obj_id])
+        return vis_values_obj_id, thermal_values_obj_id, obj_id_datetime
 
-    # def plot_obj_pixel_values_across_time(self, selected_obj_ids):
-    #     vis_values_obj_id, thermal_values_obj_id, obj_id_datetime = self.read_mean_obj_id_values_allfiles(selected_obj_ids)
-    #     print(vis_values_obj_id.keys(), thermal_values_obj_id.keys(), obj_id_datetime.keys())
+    def plot_obj_pixel_values_across_time(self, selected_obj_ids):
+        vis_values_obj_id, thermal_values_obj_id, obj_id_datetime = self.read_mean_obj_id_values_allfiles(selected_obj_ids)
+        # print(vis_values_obj_id.keys(), thermal_values_obj_id.keys(), obj_id_datetime.keys())
+        obj_plot_fig = make_subplots(rows=2, cols=2, subplot_titles=('Blue Channel', 'Green Channel', 'Red Channel', 'Thermal Camera Object Values'))
+
+        colors = ['blue', 'green', 'red']
+        for obj_id in selected_obj_ids:
+            if self.thr2visH is not None:
+                print("Vis values shape:", vis_values_obj_id[obj_id].shape)
+                for j, color in enumerate(colors):
+                    obj_plot_fig.add_trace(
+                        go.Scatter(x=obj_id_datetime[obj_id], y=vis_values_obj_id[obj_id][:, j], 
+                                name=f'Object {obj_id}',
+                                hovertemplate='<b>Date Time</b>: %{x}<br>' +
+                                                f'<b>{color.capitalize()} Value</b>: %{{y}}<br>' +
+                                                '<b>Object</b>: ' + str(obj_id)),
+                        row=int(j/2)+1, col=(j%2)+1
+                    )
+            print("Thermal values shape:", thermal_values_obj_id[obj_id].shape)
+            obj_plot_fig.add_trace(
+                go.Scatter(x=obj_id_datetime[obj_id], y=thermal_values_obj_id[obj_id], 
+                        name=f'Object {obj_id}',
+                        hovertemplate='<b>Date Time</b>: %{x}<br>' +
+                                        '<b>Object Value</b>: %{y}<br>' +
+                                        '<b>Object</b>: ' + str(obj_id)),
+                row=2, col=2
+            )
+
+        # Update layout
+        obj_plot_fig.update_layout(
+            title_text="Object Values Across Time",
+            hovermode="x unified"
+        )
+
+        # Update x and y axis labels
+        for i in range(4):
+            obj_plot_fig.update_xaxes(title_text="Date Time", row=i+1, col=1)
+            if i < 3:
+                obj_plot_fig.update_yaxes(title_text=f"{colors[i].capitalize()} Value", row=i+1, col=1)
+            else:
+                obj_plot_fig.update_yaxes(title_text="Thermal Value", row=i+1, col=1)
+
+        # Show the plot
+        obj_plot_fig.show()
+
 
     def play_video(self,show_frame_number=True):
         try:
