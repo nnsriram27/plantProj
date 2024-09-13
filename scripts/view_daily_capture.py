@@ -4,6 +4,7 @@ import os
 import sys
 import cv2
 import matplotlib.pyplot as plt
+import mplcursors
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -20,6 +21,7 @@ print(f'Workspace path: {workspace_path}')
 sys.path.append(workspace_path)
 os.chdir(workspace_path)
 
+from lib.image_processing import vis_cam_operation
 from lib.opencv_video_utils import videoPlayerVisThermal
 import argparse
 
@@ -27,8 +29,8 @@ daily_capture_data_path = './data/daily_capture/'
 
 # Get from and to date time input and only show the frames between these two date times. The files are stored in the format '%Y-%m-%d_%H-%M-%S'
 parser = argparse.ArgumentParser(description='View daily capture data')
-parser.add_argument('--from-date', type=str, help='From date in the format %Y-%m-%d %H-%M-%S')
-parser.add_argument('--to-date', type=str, help='To date in the format %Y-%m-%d %H:%M:%S')
+parser.add_argument('--from_date', type=str, help='From date in the format %Y-%m-%d %H-%M-%S')
+parser.add_argument('--to_date', type=str, help='To date in the format %Y-%m-%d %H:%M:%S')
 args = parser.parse_args()
 
 from_date = np.datetime64(args.from_date) if args.from_date is not None else None
@@ -86,6 +88,91 @@ def get_thermal_img_func(frame_number):
     data = np.load(npz_files[frame_number])
     thermal_img = data['thermal_img']
     return thermal_img
+
+def read_pixel_values_for_allfiles(selected_pix_vis, selected_pix_thermal):
+    pix_value_vis = []
+    pix_value_thermal = []
+    pix_datetime = []
+    selected_pix_vis = np.array(selected_pix_vis)
+    selected_pix_thermal = np.array(selected_pix_thermal)
+    print(selected_pix_vis.shape, selected_pix_thermal.shape)
+    for i in range(N_frames):
+        try:
+            vis_img, thermal_img, img_datetime = get_vis_thermal_img_func(i, return_datetime=True)
+            pix_datetime.append(img_datetime)
+            if vis_img is not None:
+                vis_img = vis_cam_operation(vis_img)
+                pix_value_vis.append(vis_img[selected_pix_vis[:, 1],selected_pix_vis[:, 0]])
+            if thermal_img is not None:
+                pix_value_thermal.append(thermal_img[selected_pix_thermal[:, 1],selected_pix_thermal[:, 0]])
+        except Exception as e:
+            print(f'Error reading pixel values for frame {i}: {e}')
+            # Make sure the length of pix_value_vis and pix_value_thermal are the same
+            if len(pix_value_vis) != len(pix_value_thermal):
+                pix_value_vis = pix_value_vis[:min(len(pix_value_vis), len(pix_value_thermal))]
+                pix_value_thermal = pix_value_thermal[:min(len(pix_value_vis), len(pix_value_thermal))]
+            print(thermal_img.shape, vis_img.shape)
+    return np.stack(pix_value_vis), np.stack(pix_value_thermal), np.stack(pix_datetime)
+
+
+def plot_pixel_values_across_time(cls, selected_pix_vis, selected_pix_thermal):
+    pix_value_vis, pix_value_thermal, pix_datetime = read_pixel_values_for_allfiles(selected_pix_vis, selected_pix_thermal)
+    print(pix_value_vis.shape, pix_value_thermal.shape, pix_datetime.shape)
+
+    if cls.pixel_plot_fig is None:
+        # Create new subplots if figure doesn't exist
+        cls.pixel_plot_fig = make_subplots(rows=2, cols=2, 
+                                           subplot_titles=('Blue Channel', 'Green Channel', 'Red Channel', 'Thermal Camera Pixel Values'))
+        cls.pixel_plot_counter = 0
+
+    colors = ['blue', 'green', 'red']
+    
+    # Add traces for visible camera BGR pixel values
+    if pix_value_vis.size != 0:
+        for i in range(cls.pixel_plot_counter, pix_value_vis.shape[1]):
+            for j, color in enumerate(colors):
+                cls.pixel_plot_fig.add_trace(
+                    go.Scatter(x=pix_datetime, y=pix_value_vis[:, i, j], 
+                               name=f'Pixel {selected_pix_vis[i]}',
+                               hovertemplate='<b>Date Time</b>: %{x}<br>' +
+                                             f'<b>{color.capitalize()} Value</b>: %{{y}}<br>' +
+                                             '<b>Pixel</b>: ' + str(selected_pix_vis[i])),
+                    row=int(j/2)+1, col=(j%2)+1
+                )
+
+    # Add traces for thermal camera pixel values
+    if pix_value_thermal.size != 0:
+        for i in range(cls.pixel_plot_counter, pix_value_thermal.shape[1]):
+            cls.pixel_plot_fig.add_trace(
+                go.Scatter(x=pix_datetime, y=pix_value_thermal[:, i], 
+                           name=f'Pixel {selected_pix_thermal[i]}',
+                           hovertemplate='<b>Date Time</b>: %{x}<br>' +
+                                         '<b>Pixel Value</b>: %{y}<br>' +
+                                         '<b>Pixel</b>: ' + str(selected_pix_thermal[i])),
+                row=2, col=2
+            )
+
+    cls.pixel_plot_counter = max(pix_value_vis.shape[1], pix_value_thermal.shape[1])
+    
+    # Update layout
+    cls.pixel_plot_fig.update_layout(
+        title_text="Pixel Values Across Time",
+        hovermode="x unified"
+    )
+    
+    # Update x and y axis labels
+    for i in range(4):
+        cls.pixel_plot_fig.update_xaxes(title_text="Date Time", row=i+1, col=1)
+        if i < 3:
+            cls.pixel_plot_fig.update_yaxes(title_text=f"{colors[i].capitalize()} Value", row=i+1, col=1)
+        else:
+            cls.pixel_plot_fig.update_yaxes(title_text="Thermal Value", row=i+1, col=1)
+
+    # Show the plot
+    cls.pixel_plot_fig.show()
+
+
+videoPlayerVisThermal.plot_pixel_values_across_time = plot_pixel_values_across_time
 
 @classmethod
 def get_img_fname(cls, data_counter):
