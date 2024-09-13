@@ -7,8 +7,11 @@ from flirpy.camera.boson import Boson
 
 
 class BosonFrameGrabber(object):
-    def __init__(self):
-        self.camera = Boson()
+    def __init__(self, serial_port="/dev/ttyACM0", device_id=0):
+        self.serial_port = serial_port
+        self.device_id = device_id
+        self.camera = Boson(port=serial_port)
+        self.camera.setup_video(device_id=device_id)        
         self.height = 512
         self.width = 640
         self._shared_array = RawArray(ctypes.c_uint16, self.height * self.width)
@@ -24,9 +27,9 @@ class BosonFrameGrabber(object):
     
     def stop_grabber(self):
         self._running = False
-        self.camera.release()
         self._grabber_thread.join()
-    
+        self.camera.release()
+            
     def run_grabber(self):
         while self._running:
             frame = np.frombuffer(self._shared_array, dtype=np.uint16, count=self.height * self.width)

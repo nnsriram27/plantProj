@@ -1,3 +1,5 @@
+import time
+
 import cv2
 import numpy as np
 
@@ -42,6 +44,7 @@ class uEye(object):
         ret = ueye.is_SetImageMem(self.hcam, self.mem_ptr, self.mem_id)
         assert ret == ueye.IS_SUCCESS, f'Failed to set memory active. Error code: {ret}'
 
+        # get image memory pitch
         self.lineinc = ueye.c_int()
         ret = ueye.is_GetImageMemPitch(self.hcam, self.lineinc)
         assert ret == ueye.IS_SUCCESS, f'Failed to get image memory pitch. Error code: {ret}'
@@ -65,6 +68,35 @@ class uEye(object):
         assert ret == ueye.IS_SUCCESS, f'Failed to get exposure increment. Error code: {ret}'
 
         print(f"Camera initialized and has exposure range: [{self.exposure_min.value}, {self.exposure_max.value}] ms")
+
+    def configure_gain_per_channel(self, gain_master, gain_red, gain_green, gain_blue):
+        # Set gain for each color channel
+        ret = ueye.is_SetHardwareGain(self.hcam, gain_master, gain_red, gain_green, gain_blue)
+        assert ret == ueye.IS_SUCCESS, f'Failed to set hardware gain. Error code: {ret}'
+        print(f'Gain set to Master: {gain_master}, R: {gain_red}, G: {gain_green}, B: {gain_blue}')
+
+    def get_camera_gains(self):
+        ret = ueye.is_SetHardwareGain(self.hcam, ueye.IS_GET_MASTER_GAIN, ueye.IS_IGNORE_PARAMETER, ueye.IS_IGNORE_PARAMETER, ueye.IS_IGNORE_PARAMETER)
+        assert ret >= 0, f'Failed to get master hardware gain. Error code: {ret}'
+        gain_master = ret
+        ret = ueye.is_SetHardwareGain(self.hcam, ueye.IS_GET_RED_GAIN, ueye.IS_IGNORE_PARAMETER, ueye.IS_IGNORE_PARAMETER, ueye.IS_IGNORE_PARAMETER)
+        assert ret >= 0, f'Failed to get red hardware gain. Error code: {ret}'
+        gain_red = ret
+        ret = ueye.is_SetHardwareGain(self.hcam, ueye.IS_GET_GREEN_GAIN, ueye.IS_IGNORE_PARAMETER, ueye.IS_IGNORE_PARAMETER, ueye.IS_IGNORE_PARAMETER)
+        assert ret >= 0, f'Failed to get green hardware gain. Error code: {ret}'
+        gain_green = ret
+        ret = ueye.is_SetHardwareGain(self.hcam, ueye.IS_GET_BLUE_GAIN, ueye.IS_IGNORE_PARAMETER, ueye.IS_IGNORE_PARAMETER, ueye.IS_IGNORE_PARAMETER)
+        assert ret >= 0, f'Failed to get blue hardware gain. Error code: {ret}'
+        gain_blue = ret
+        return gain_master, gain_red, gain_green, gain_blue
+
+    def start_continuous_capture(self):
+        ret = ueye.is_CaptureVideo(self.hcam, ueye.IS_WAIT)
+        assert ret == ueye.IS_SUCCESS, f'Failed to start video capture. Error code: {ret}'
+            
+    def stop_continuous_capture(self):
+        ret = ueye.is_StopLiveVideo(self.hcam, ueye.IS_FORCE_VIDEO_STOP)
+        assert ret == ueye.IS_SUCCESS, f'Failed to stop video capture. Error code: {ret}'
 
     def set_fps(self, fps):
         # set frame rate
@@ -92,9 +124,9 @@ class uEye(object):
                 print(f"Exposure value {exposure_val} is less than minimum {self.exposure_min.value}")
             exposure_val = self.exposure_min.value
         elif exposure_val > self.exposure_max.value:
-            exposure_val = self.exposure_max.value
             if print_message:
                 print(f"Exposure value {exposure_val} is greater than maximum {self.exposure_max.value}")
+            exposure_val = self.exposure_max.value
 
         # exposure_val is in milliseconds
         time_exposure = ueye.double(exposure_val)
@@ -157,6 +189,9 @@ class uEye(object):
         return img, True
 
     def __del__(self):
+        if hasattr(self, 'mem_ptr'):
+            ret = ueye.is_FreeImageMem(self.hcam, self.mem_ptr, self.mem_id)
+            assert ret == ueye.IS_SUCCESS, f'Failed to free image memory. Error code: {ret}'
         # clean up
         ret = ueye.is_StopLiveVideo(self.hcam, ueye.IS_FORCE_VIDEO_STOP)
         assert ret == ueye.IS_SUCCESS, f'Failed to stop video capture. Error code: {ret}'
