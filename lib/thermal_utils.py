@@ -3,6 +3,7 @@ import numpy as np
 from threading import Thread
 from flirpy.camera.boson import Boson
 from BosonSDK import *
+from lib.image_processing import thermal_cam_operation
 
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 class FrameThreadGeneral(Thread):
@@ -146,24 +147,6 @@ def capture(thermalCam_handle, N_frames_to_record = None, vis_capture = False):
     time_stamps = [[]]
     time_stamps[0] = imager.read_times()
     return frame_recording, time_stamps
-
-def thermal_cam_operation(frame,minmax=None):
-    frame = frame.astype(np.float32)
-
-    # Rescale to 8 bit
-    if minmax is None:
-        frame_min = frame.min()
-        frame_max = frame.max()
-    else:
-        frame_min,frame_max = minmax
-                
-    # print(frame_min,frame_max)
-    frame = 255*(frame - frame_min)/(frame_max-frame_min)    
-    # Apply colourmap - try COLORMAP_JET if INFERNO doesn't work.
-    # You can also try PLASMA or MAGMA
-    frame = cv2.applyColorMap(frame.astype(np.uint8), cv2.COLORMAP_INFERNO)
-    return frame, (frame_min,frame_max)
-
 
 class BosonCamera():
     def __init__(self,port):

@@ -4,6 +4,22 @@ import traceback
 
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 
+def thermal_cam_operation(frame,minmax=None, colormap=cv2.COLORMAP_INFERNO):
+    frame = frame.astype(np.float32)
+
+    # Rescale to 8 bit
+    if minmax is None:
+        frame_min = frame.min()
+        frame_max = frame.max()
+    else:
+        frame_min,frame_max = minmax
+                
+    # print(frame_min,frame_max)
+    frame = 255*(frame - frame_min)/(frame_max-frame_min)    
+    # Apply colourmap - try COLORMAP_JET if INFERNO doesn't work.
+    # You can also try PLASMA or MAGMA
+    frame = cv2.applyColorMap(frame.astype(np.uint8), colormap)
+    return frame, (frame_min,frame_max)
 
 def debayer_image(img,mode='BGR'):
     if mode is 'BGR':
