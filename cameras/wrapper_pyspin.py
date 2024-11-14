@@ -62,9 +62,18 @@ class Blackfly(object):
         self.min_gain_val = node_gain.GetMin()
         self.max_gain_val = node_gain.GetMax()
 
+        node_fps = PySpin.CFloatPtr(self.nodemap.GetNode('AcquisitionFrameRate'))
+        self.min_fps_val = node_fps.GetMin()
+        self.max_fps_val = node_fps.GetMax()
+
         # Set Acquisition Mode
         self.cam.AcquisitionMode.SetValue(PySpin.AcquisitionMode_Continuous)
         self.cam.BeginAcquisition()
+
+        # Keep current exposure, gain and fps values
+        self.exposure = self.get_exposure()
+        self.gain = self.get_gain()
+        self.fps = self.get_fps()
 
     def __del__(self):
         self.cam.EndAcquisition()
@@ -93,7 +102,8 @@ class Blackfly(object):
             print(f'Given Exposure Time of {exposure_time} is greater than max exp value, using {self.max_exp_val}...')
             exposure_time = self.max_exp_val
         self.cam.ExposureTime.SetValue(exposure_time)
-        print('Exposure set to %f us...' % self.get_exposure())
+        self.exposure = self.get_exposure()
+        print('Exposure set to %f us...' % self.exposure)
         
     def get_exposure(self):
         return self.cam.ExposureTime.GetValue()
@@ -105,18 +115,23 @@ class Blackfly(object):
         elif gain > self.max_gain_val:
             print(f'Given Gain of {gain} is greater than max gain value, using {self.max_gain_val}...')
             gain = self.max_gain_val
-        
         self.cam.Gain.SetValue(gain)
-        print('Gain set to %f dB...' % self.get_gain())
+        self.gain = self.get_gain()
+        print('Gain set to %f dB...' % self.gain)
         
     def get_gain(self):
         return self.cam.Gain.GetValue()
     
     def set_fps(self, fps):
-        # self.cam.AcquisitionFrameRateEnable.SetValue(True)
+        if fps < self.min_fps_val:
+            print(f'Given FPS of {fps} is less than min fps value, using {self.min_fps_val}...')
+            fps = self.min_fps_val
+        elif fps > self.max_fps_val:
+            print(f'Given FPS of {fps} is greater than max fps value, using {self.max_fps_val}...')
+            fps = self.max_fps_val
         self.cam.AcquisitionFrameRate.SetValue(fps)
-        # Get the current frame rate
-        print('Current FPS: %f...' % self.get_fps())
+        self.fps = self.get_fps()
+        print('Current FPS: %f...' % self.fps)
     
     def get_fps(self):
         return self.cam.AcquisitionFrameRate.GetValue()
