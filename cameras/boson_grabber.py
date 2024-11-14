@@ -7,7 +7,7 @@ from flirpy.camera.boson import Boson
 
 
 class BosonFrameGrabber(object):
-    def __init__(self, serial_port="/dev/ttyACM0", device_id=0):
+    def __init__(self, serial_port=None, device_id=None):
         self.serial_port = serial_port
         self.device_id = device_id
         self.camera = Boson(port=serial_port)
