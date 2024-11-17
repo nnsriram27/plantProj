@@ -104,6 +104,7 @@ class Blackfly(object):
         self.cam.ExposureTime.SetValue(exposure_time)
         self.exposure = self.get_exposure()
         print('Exposure set to %f us...' % self.exposure)
+        _ = self.get_next_image()   # To update the exposure time in the camera
         
     def get_exposure(self):
         return self.cam.ExposureTime.GetValue()
