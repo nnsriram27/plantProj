@@ -1,7 +1,7 @@
 import os
-
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
+import time
 import cv2
 import PySpin
 
@@ -105,9 +105,24 @@ class Blackfly(object):
         self.exposure = self.get_exposure()
         print('Exposure set to %f us...' % self.exposure)
         _ = self.get_next_image()   # To update the exposure time in the camera
+        return self.exposure
         
     def get_exposure(self):
         return self.cam.ExposureTime.GetValue()
+    
+    def scan_exposures(self):
+        curr_exp = self.min_exp_val
+        self.exposure_vals = [self.min_exp_val]
+
+        while curr_exp < self.max_exp_val:
+            self.cam.ExposureTime.SetValue(curr_exp)
+            new_exp = self.cam.ExposureTime.GetValue()
+            if new_exp > self.exposure_vals[-1]:
+                print('Exposure set to %f us...' % new_exp)
+                self.exposure_vals.append(new_exp)
+            curr_exp += 1
+        self.exposure_vals.append(self.max_exp_val)
+        return self.exposure_vals
     
     def set_gain(self, gain):
         if gain < self.min_gain_val:
@@ -119,11 +134,14 @@ class Blackfly(object):
         self.cam.Gain.SetValue(gain)
         self.gain = self.get_gain()
         print('Gain set to %f dB...' % self.gain)
+        _ = self.get_next_image()   # To update the gain in the camera
+        return self.gain
         
     def get_gain(self):
         return self.cam.Gain.GetValue()
     
     def set_fps(self, fps):
+        curr_exp = self.get_exposure()
         if fps < self.min_fps_val:
             print(f'Given FPS of {fps} is less than min fps value, using {self.min_fps_val}...')
             fps = self.min_fps_val
@@ -133,13 +151,21 @@ class Blackfly(object):
         self.cam.AcquisitionFrameRate.SetValue(fps)
         self.fps = self.get_fps()
         print('Current FPS: %f...' % self.fps)
+
+        # Update min and max exposure values
+        self.min_exp_val = self.cam.ExposureTime.GetMin()
+        self.max_exp_val = self.cam.ExposureTime.GetMax()
+
+        # Set exposure to the previous value
+        self.set_exposure(curr_exp)
+        return self.fps
     
     def get_fps(self):
         return self.cam.AcquisitionFrameRate.GetValue()
 
     def get_next_image(self, metadata=False):
         try:
-            image_result = self.cam.GetNextImage()
+            image_result, software_tstamp = self.cam.GetNextImage(), time.time()
 
             #  Ensure image completion
             if image_result.IsIncomplete():
@@ -176,7 +202,7 @@ class Blackfly(object):
         if metadata:
             return image_data, exposure_time, gain, timestamp
         else:
-            return image_data
+            return image_data, software_tstamp
 
 
 def main():
