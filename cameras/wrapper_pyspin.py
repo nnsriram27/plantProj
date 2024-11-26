@@ -213,8 +213,6 @@ class Blackfly(object):
                 timestamp = meta_data.GetTimestamp()
                 timestamp = timestamp / 1e9 + self.timestamp_offset
 
-                print(f"Exposure Time: {exposure_time} us, Gain: {gain} dB, Timestamp: {timestamp} s, Software Timestamp: {software_tstamp} s \r", end='')
-
                 if self.image_processor is not None:
                     # Getting the image data as a numpy array
                     if self.bpp == 8:
@@ -242,14 +240,31 @@ class Blackfly(object):
 def main():
 
     bfly_obj = Blackfly()
+    fps = bfly_obj.get_fps()
+    print(f'Initial FPS: {fps}')
 
     while True:
-        image_data, exp_time, gain, tstamp = bfly_obj.get_next_image(metadata=True)
+        image_data, tstamp, exp_time, gain = bfly_obj.get_next_image(metadata=True)
+        
+        print(f"Exposure Time: {exp_time} us, Gain: {gain} dB, Timestamp: {tstamp}s \r", end='')
         
         cv2.imshow("image", image_data)
-        if cv2.waitKey(1) == ord('q'):
+        key = cv2.waitKey(1)
+        if key == ord('e'):
+            exp_time = bfly_obj.set_exposure(exp_time + 100)
+        elif key == ord('d'):
+            exp_time = bfly_obj.set_exposure(exp_time - 100)
+        elif key == ord('g'):
+            gain = bfly_obj.set_gain(gain + 1)
+        elif key == ord('f'):
+            gain = bfly_obj.set_gain(gain - 1)
+        elif key == ord('r'):
+            fps = bfly_obj.set_fps(fps + 1)
+        elif key == ord('t'):
+            fps = bfly_obj.set_fps(fps - 1)
+        elif key == ord('q'):
             break
-    
+
     print("\nExiting...")
     cv2.destroyAllWindows()
     del bfly_obj   
