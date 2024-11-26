@@ -20,18 +20,8 @@ class Blackfly(object):
         self.cam.Init()
         self.nodemap = self.cam.GetNodeMap()
         self.set_buffer_handling_mode()
-
-        # Load UserSet2
-        node_user_set_selector = PySpin.CEnumerationPtr(self.nodemap.GetNode('UserSetSelector'))
-        if not PySpin.IsAvailable(node_user_set_selector) or not PySpin.IsWritable(node_user_set_selector):
-            print('Unable to load UserSet0... Aborting...')
-            return False
-        node_user_set_selector.SetIntValue(PySpin.UserSetSelector_UserSet1)
-        node_user_set_load = PySpin.CCommandPtr(self.nodemap.GetNode('UserSetLoad'))
-        if not PySpin.IsAvailable(node_user_set_load) or not PySpin.IsWritable(node_user_set_load):
-            print('Unable to load UserSet0... Aborting...')
-            return False
-        node_user_set_load.Execute()
+        self.load_userset("UserSet0")
+        self.timestamp_offset = self.get_timestamp_offset()
 
         # Set Pixel Format
         self.image_processor = None
@@ -94,6 +84,50 @@ class Blackfly(object):
         node_newestonly_mode = node_newestonly.GetValue()
         node_bufferhandling_mode.SetIntValue(node_newestonly_mode)
 
+    def load_userset(self, userset_name):
+        # if userset_name == "UserSet0":
+        #     userset_value = PySpin.UserSetSelector_UserSet0
+        # elif userset_name == "UserSet1":
+        #     userset_value = PySpin.UserSetSelector_UserSet1
+        # elif userset_name == "Default":
+        #     userset_value = PySpin.UserSetSelector_Default
+        # else:
+        #     raise NotImplementedError()
+        
+        node_user_set_selector = PySpin.CEnumerationPtr(self.nodemap.GetNode('UserSetSelector'))
+        if not PySpin.IsReadable(node_user_set_selector) or not PySpin.IsWritable(node_user_set_selector):
+            print('Unable to load UserSet0... Aborting...')
+            return False
+        node_user_set_value = node_user_set_selector.GetEntryByName(userset_name)
+        if not PySpin.IsReadable(node_user_set_value):
+            print('Unable to load UserSet0... Aborting...')
+            return False
+        node_user_set_selector.SetIntValue(node_user_set_value.GetValue())
+
+        node_user_set_load = PySpin.CCommandPtr(self.nodemap.GetNode('UserSetLoad'))
+        if not PySpin.IsAvailable(node_user_set_load) or not PySpin.IsWritable(node_user_set_load):
+            print('Unable to load UserSet0... Aborting...')
+            return False
+        node_user_set_load.Execute()
+
+    def get_timestamp_offset(self):
+        # Execute Timestamp Latch and return the value
+        node_timestamp_latch = PySpin.CCommandPtr(self.nodemap.GetNode('TimestampLatch'))
+        if not PySpin.IsAvailable(node_timestamp_latch) or not PySpin.IsWritable(node_timestamp_latch):
+            print('Unable to execute TimestampLatch... Aborting...')
+            return False
+        system_time = time.time()
+        node_timestamp_latch.Execute()
+        node_timestamp_latch_value = PySpin.CIntegerPtr(self.nodemap.GetNode('TimestampLatchValue'))
+        if not PySpin.IsAvailable(node_timestamp_latch_value) or not PySpin.IsReadable(node_timestamp_latch_value):
+            print('Unable to read TimestampLatchValue... Aborting...')
+            return False
+        latched_time = node_timestamp_latch_value.GetValue()
+        print(f'System Time: {system_time} s...')
+        print(f'Timestamp Latch Value: {latched_time} ns...')
+        timestamp_offset = system_time - latched_time / 1e9
+        return timestamp_offset
+    
     def set_exposure(self, exposure_time):
         if exposure_time < self.min_exp_val:
             print(f'Given Exposure Time of {exposure_time} is less than min exp value, using {self.min_exp_val}...')
@@ -173,13 +207,13 @@ class Blackfly(object):
 
                 image_data, exposure_time, gain, timestamp = None, None, None, None
             else:                    
-                # meta_data = image_result.GetChunkData()
-                # exposure_time = meta_data.GetExposureTime()
-                # gain = meta_data.GetGain()
-                # timestamp = meta_data.GetTimestamp()
-                exposure_time = 0.0
-                gain = 0.0
-                timestamp = 0.0
+                meta_data = image_result.GetChunkData()
+                exposure_time = meta_data.GetExposureTime()
+                gain = meta_data.GetGain()
+                timestamp = meta_data.GetTimestamp()
+                timestamp = timestamp / 1e9 + self.timestamp_offset
+
+                print(f"Exposure Time: {exposure_time} us, Gain: {gain} dB, Timestamp: {timestamp} s, Software Timestamp: {software_tstamp} s \r", end='')
 
                 if self.image_processor is not None:
                     # Getting the image data as a numpy array
@@ -200,7 +234,7 @@ class Blackfly(object):
             return False
         
         if metadata:
-            return image_data, exposure_time, gain, timestamp
+            return image_data, timestamp, exposure_time, gain
         else:
             return image_data, software_tstamp
 
@@ -210,12 +244,13 @@ def main():
     bfly_obj = Blackfly()
 
     while True:
-        image_data = bfly_obj.getNextImage()
+        image_data, exp_time, gain, tstamp = bfly_obj.get_next_image(metadata=True)
         
         cv2.imshow("image", image_data)
         if cv2.waitKey(1) == ord('q'):
             break
-
+    
+    print("\nExiting...")
     cv2.destroyAllWindows()
     del bfly_obj   
     
