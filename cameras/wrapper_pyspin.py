@@ -128,7 +128,7 @@ class Blackfly(object):
         timestamp_offset = system_time - latched_time / 1e9
         return timestamp_offset
     
-    def set_exposure(self, exposure_time):
+    def set_exposure(self, exposure_time, check=True):
         if exposure_time < self.min_exp_val:
             print(f'Given Exposure Time of {exposure_time} is less than min exp value, using {self.min_exp_val}...')
             exposure_time = self.min_exp_val
@@ -138,24 +138,29 @@ class Blackfly(object):
         self.cam.ExposureTime.SetValue(exposure_time)
         self.exposure = self.get_exposure()
         print('Exposure set to %f us...' % self.exposure)
-        _ = self.get_next_image()   # To update the exposure time in the camera
+        if check:
+            while True:
+                _, _, curr_exp, _ = self.get_next_image(metadata=True)
+                if abs(curr_exp - self.exposure) < 10:
+                    break
         return self.exposure
         
     def get_exposure(self):
         return self.cam.ExposureTime.GetValue()
     
-    def scan_exposures(self):
+    def scan_exposures(self, max_exp_val=None):
         curr_exp = self.min_exp_val
         self.exposure_vals = [self.min_exp_val]
-
-        while curr_exp < self.max_exp_val:
+        if max_exp_val is None:
+            max_exp_val = self.max_exp_val
+        while curr_exp < max_exp_val:
             self.cam.ExposureTime.SetValue(curr_exp)
             new_exp = self.cam.ExposureTime.GetValue()
             if new_exp > self.exposure_vals[-1]:
                 print('Exposure set to %f us...' % new_exp)
                 self.exposure_vals.append(new_exp)
             curr_exp += 1
-        self.exposure_vals.append(self.max_exp_val)
+        self.exposure_vals.append(max_exp_val)
         return self.exposure_vals
     
     def set_gain(self, gain):
@@ -168,7 +173,10 @@ class Blackfly(object):
         self.cam.Gain.SetValue(gain)
         self.gain = self.get_gain()
         print('Gain set to %f dB...' % self.gain)
-        _ = self.get_next_image()   # To update the gain in the camera
+        while True:
+            _, _, _, curr_gain = self.get_next_image(metadata=True)
+            if abs(curr_gain - self.gain) < 0.1:
+                break
         return self.gain
         
     def get_gain(self):
