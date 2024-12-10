@@ -22,3 +22,21 @@ class LightIntensityController:
 
     def close(self):
         self.task.close()
+
+
+if __name__ == "__main__":
+    
+    light_obj = LightIntensityController()
+
+    while True:
+        voltage = input("Enter voltage (negative value to exit): ")
+        try: 
+            voltage = float(voltage)
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            continue
+        if voltage < 0:
+            light_obj.close()
+            break
+        light_obj.set_voltage(voltage)
+        print(f"Voltage set to {voltage} V\r", end="")

@@ -39,7 +39,7 @@ class BosonWithTelemetry(ThreadedBoson):
         _, cam_timestamp = self.parse_telemetry(telemetry)
         timestamp = cam_timestamp + self.timestamp_offset
 
-        return image, timestamp
+        return image, timestamp, telemetry
 
     def parse_telemetry(self, telemetry):
         frame_counter = telemetry[0, 42] * 2**16 + telemetry[0, 43]
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     cv2.namedWindow("Boson", cv2.WINDOW_NORMAL)
     
     while True:
-        image, timestamp = boson.get_next_image()
+        image, timestamp, _ = boson.get_next_image()
 
         image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX)
         image = np.uint8(image)

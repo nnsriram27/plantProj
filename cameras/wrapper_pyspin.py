@@ -85,15 +85,6 @@ class Blackfly(object):
         node_bufferhandling_mode.SetIntValue(node_newestonly_mode)
 
     def load_userset(self, userset_name):
-        # if userset_name == "UserSet0":
-        #     userset_value = PySpin.UserSetSelector_UserSet0
-        # elif userset_name == "UserSet1":
-        #     userset_value = PySpin.UserSetSelector_UserSet1
-        # elif userset_name == "Default":
-        #     userset_value = PySpin.UserSetSelector_Default
-        # else:
-        #     raise NotImplementedError()
-        
         node_user_set_selector = PySpin.CEnumerationPtr(self.nodemap.GetNode('UserSetSelector'))
         if not PySpin.IsReadable(node_user_set_selector) or not PySpin.IsWritable(node_user_set_selector):
             print('Unable to load UserSet0... Aborting...')
@@ -140,8 +131,8 @@ class Blackfly(object):
         print('Exposure set to %f us...' % self.exposure)
         if check:
             while True:
-                _, _, curr_exp, _ = self.get_next_image(metadata=True)
-                if abs(curr_exp - self.exposure) < 10:
+                _, _, _, curr_exp, _ = self.get_next_image(return_metadata=True)
+                if abs(curr_exp - self.exposure) < 5:
                     break
         return self.exposure
         
@@ -174,7 +165,7 @@ class Blackfly(object):
         self.gain = self.get_gain()
         print('Gain set to %f dB...' % self.gain)
         while True:
-            _, _, _, curr_gain = self.get_next_image(metadata=True)
+            _, _, _, _, curr_gain = self.get_next_image(return_metadata=True)
             if abs(curr_gain - self.gain) < 0.1:
                 break
         return self.gain
@@ -205,7 +196,7 @@ class Blackfly(object):
     def get_fps(self):
         return self.cam.AcquisitionFrameRate.GetValue()
 
-    def get_next_image(self, metadata=False):
+    def get_next_image(self, return_metadata=False):
         try:
             image_result, software_tstamp = self.cam.GetNextImage(), time.time()
 
@@ -213,13 +204,14 @@ class Blackfly(object):
             if image_result.IsIncomplete():
                 print('Image incomplete with image status ', PySpin.Image_GetImageStatusDescription(image_result.GetImageStatus()))
 
-                image_data, exposure_time, gain, timestamp = None, None, None, None
+                image_data, timestamp, frame_number, exposure, gain = None, None, None, None, None
             else:                    
-                meta_data = image_result.GetChunkData()
-                exposure_time = meta_data.GetExposureTime()
-                gain = meta_data.GetGain()
-                timestamp = meta_data.GetTimestamp()
+                metadata = image_result.GetChunkData()
+                timestamp = metadata.GetTimestamp()
                 timestamp = timestamp / 1e9 + self.timestamp_offset
+                frame_number = metadata.GetFrameID()
+                exposure = metadata.GetExposureTime()
+                gain = metadata.GetGain()
 
                 if self.image_processor is not None:
                     # Getting the image data as a numpy array
@@ -239,8 +231,8 @@ class Blackfly(object):
             print('Error: %s' % ex)
             return False
         
-        if metadata:
-            return image_data, timestamp, exposure_time, gain
+        if return_metadata:
+            return image_data, timestamp, frame_number, exposure, gain
         else:
             return image_data, software_tstamp
 
@@ -252,16 +244,16 @@ def main():
     print(f'Initial FPS: {fps}')
 
     while True:
-        image_data, tstamp, exp_time, gain = bfly_obj.get_next_image(metadata=True)
+        image_data, timestamp, frame_number, exposure, gain = bfly_obj.get_next_image(return_metadata=True)
         
-        print(f"Exposure Time: {exp_time} us, Gain: {gain} dB, Timestamp: {tstamp}s \r", end='')
+        print(f"Timestamp: {timestamp} s, Frame number: {frame_number}, Exposure Time: {exposure} us, Gain: {gain} dB \r", end='')
         
         cv2.imshow("image", image_data)
         key = cv2.waitKey(1)
         if key == ord('e'):
-            exp_time = bfly_obj.set_exposure(exp_time + 100)
+            exposure = bfly_obj.set_exposure(exposure + 100)
         elif key == ord('d'):
-            exp_time = bfly_obj.set_exposure(exp_time - 100)
+            exposure = bfly_obj.set_exposure(exposure - 100)
         elif key == ord('g'):
             gain = bfly_obj.set_gain(gain + 1)
         elif key == ord('f'):
@@ -274,8 +266,9 @@ def main():
             break
 
     print("\nExiting...")
+    del bfly_obj
     cv2.destroyAllWindows()
-    del bfly_obj   
+    
     
 
 if __name__ == '__main__':
