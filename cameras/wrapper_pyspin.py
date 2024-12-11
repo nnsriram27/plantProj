@@ -65,7 +65,7 @@ class Blackfly(object):
         self.gain = self.get_gain()
         self.fps = self.get_fps()
 
-    def __del__(self):
+    def stop(self):
         self.cam.EndAcquisition()
         self.cam.DeInit()
         del self.cam
@@ -118,6 +118,16 @@ class Blackfly(object):
         print(f'Timestamp Latch Value: {latched_time} ns...')
         timestamp_offset = system_time - latched_time / 1e9
         return timestamp_offset
+    
+    def set_auto_exposure(self, auto_exp=True):
+        if auto_exp:
+            self.cam.ExposureAuto.SetValue(PySpin.ExposureAuto_Continuous)
+        else:
+            self.cam.ExposureAuto.SetValue(PySpin.ExposureAuto_Off)
+        return self.get_auto_exposure()
+
+    def get_auto_exposure(self):
+        return self.cam.ExposureAuto.GetValue()
     
     def set_exposure(self, exposure_time, check=True):
         if exposure_time < self.min_exp_val:
@@ -196,7 +206,7 @@ class Blackfly(object):
     def get_fps(self):
         return self.cam.AcquisitionFrameRate.GetValue()
 
-    def get_next_image(self, return_metadata=False):
+    def get_next_image(self, return_metadata=True):
         try:
             image_result, software_tstamp = self.cam.GetNextImage(), time.time()
 
@@ -266,7 +276,7 @@ def main():
             break
 
     print("\nExiting...")
-    del bfly_obj
+    bfly_obj.stop()
     cv2.destroyAllWindows()
     
     

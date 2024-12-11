@@ -1,0 +1,11 @@
+{
+    "par_value": 1000,
+    "light_control_voltages": [2.99, 5.22, 6.76, 10],
+    "light_intensity_perc": [20, 40, 60, 100],
+    "light_pulse_duration": [10, 10, 10, 10],
+    "relaxation_duration": [50, 50, 50, 50],
+    "fps_during_pulse": 60,
+    "fps_between_pulses": 1,
+    "vis_cam_exposure_sp700": [90, 80, 70, 60],
+    "vis_cam_exposure_lp700": [2700, 2400, 2100, 1600]
+}

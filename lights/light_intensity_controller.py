@@ -9,6 +9,7 @@ class LightIntensityController:
         self.task.ao_channels.add_ao_voltage_chan(f'{self.device_name}/{self.channel}')
         self.min_voltage = 0.0
         self.max_voltage = 10.0
+        self.closed = False
 
     def set_voltage(self, voltage):
         if voltage < self.min_voltage:
@@ -21,7 +22,12 @@ class LightIntensityController:
         self.task.write(voltage)
 
     def close(self):
-        self.task.close()
+        if not self.closed:
+            self.task.close()
+            self.closed = True
+    
+    def __del__(self):
+        self.close()
 
 
 if __name__ == "__main__":

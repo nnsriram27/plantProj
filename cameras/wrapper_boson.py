@@ -31,15 +31,17 @@ class BosonWithTelemetry(ThreadedBoson):
 
         self.compute_timestamp_offset()
     
-    def get_next_image(self):
+    def get_next_image(self, hflip=False):
         latest_image = self.latest()
 
         telemetry = latest_image[:2, :, 0]
         image = latest_image[2:, :, 0]
-        _, cam_timestamp = self.parse_telemetry(telemetry)
+        frame_number, cam_timestamp = self.parse_telemetry(telemetry)
         timestamp = cam_timestamp + self.timestamp_offset
 
-        return image, timestamp, telemetry
+        if hflip:
+            image = cv2.flip(image, 1)
+        return image, timestamp, frame_number, telemetry
 
     def parse_telemetry(self, telemetry):
         frame_counter = telemetry[0, 42] * 2**16 + telemetry[0, 43]
@@ -55,11 +57,11 @@ if __name__ == "__main__":
     cv2.namedWindow("Boson", cv2.WINDOW_NORMAL)
     
     while True:
-        image, timestamp, _ = boson.get_next_image()
+        image, timestamp, frame_number, _ = boson.get_next_image()
 
         image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX)
         image = np.uint8(image)
-        print(f"Timestamp: {timestamp}\r", end="")
+        print(f"Timestamp: {timestamp}, Frame number: {frame_number}\r", end="")
 
         cv2.imshow("Boson", image)
         key = cv2.waitKey(1)
