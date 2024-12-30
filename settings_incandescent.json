@@ -6,6 +6,6 @@
     "relaxation_duration": [50, 50, 50, 50, 50, 50, 50],
     "fps_during_pulse": 10,
     "fps_between_pulses": 1,
-    "vis_cam_exposure_sp700": [165, 155, 145, 135, 125, 100, 90],
-    "vis_cam_exposure_lp700": [1800, 1750, 1700, 1650, 1600, 1450, 1375]
+    "vis_cam_exposure_sp700": [90, 80, 70, 60, 50, 40, 30],
+    "vis_cam_exposure_lp700": [300, 280, 260, 240, 220, 170, 120]
 }

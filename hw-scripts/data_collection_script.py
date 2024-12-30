@@ -25,6 +25,7 @@ def parse_args():
     return parser.parse_args()
 
 args = parse_args()
+data_slug = args.data_slug
 
 try:
     pulsetrain_settings = json.load(open(args.pulsetrain_settings, "r"))
@@ -74,7 +75,6 @@ def shutdown():
     thr_cam_obj.stop()
     light_obj.close()
     stage_obj.close()
-    sys.exit()
 
 # Capture sample images with the different exposure settings and confirm they are not over or under exposed
 num_pulses = len(pulsetrain_settings['light_control_voltages'])
@@ -168,6 +168,7 @@ if args.check_exposure:
         confirm = input("Are these images correctly exposed? (y/n): ") == "y"
         if not confirm:
             shutdown()
+            sys.exit()
 
     print(f"Images are correctly exposed. Now select some pixels of interest")
 else:
@@ -213,18 +214,25 @@ fig.canvas.mpl_connect('button_press_event', pyplot_on_click)
 update_plot()
 plt.show()
 
+confirm = input("Are these pixels correct? (y/n): ") == "y"
+if not confirm:
+    shutdown()
+    sys.exit()
+
 # Wait for the leaves to regain steady state
 
 data_stable = False
 vis_pixel_vals = []
-vis_tstamps = []
+acc_vis_imgs = []
+acc_vis_tstamps = []
 thr_pixel_vals = []
-thr_tstamps = []
+acc_thr_imgs = []
+acc_thr_tstamps = []
 
 while not data_stable:
 
     ## Collect data for 10 seconds and plot data
-    for frame_idx in tqdm(range(10)):
+    for frame_idx in tqdm(range(15)):
         vis_img, vis_tstamp, _, _, _ = vis_cam_obj.get_next_image()
         thr_img, thr_tstamp, _, _ = thr_cam_obj.get_next_image(hflip=True)
         for i, pixel in enumerate(vis_selected_pixels):
@@ -235,39 +243,43 @@ while not data_stable:
             if frame_idx == 0:
                 thr_pixel_vals.append([])
             thr_pixel_vals[i].append(thr_img[pixel[1], pixel[0]])
-        vis_tstamps.append(vis_tstamp)
-        thr_tstamps.append(thr_tstamp)
+        acc_vis_imgs.append(vis_img)
+        acc_vis_tstamps.append(vis_tstamp)
+        acc_thr_imgs.append(thr_img)
+        acc_thr_tstamps.append(thr_tstamp)
         time.sleep(1)
 
     fig, ax = plt.subplots(2, 2, figsize=(10, 10))
-    ax[0, 0].imshow(vis_img)
+    ax[0, 0].imshow(vis_img, cmap="turbo")
     ax[0, 0].set_title("Visible Image")
     ax[0, 0].axis("off")
-    ax[0, 1].imshow(thr_img)
+    ax[0, 1].imshow(thr_img, cmap="turbo")
     ax[0, 1].set_title("Thermal Image")
     ax[0, 1].axis("off")
     for i, pixel in enumerate(vis_selected_pixels):
         ax[0, 0].scatter(pixel[0], pixel[1], color=f"C{i}")
-        ax[1, 0].plot(vis_tstamps, vis_pixel_vals[i], '.', label=f"Pixel {i}", color=f"C{i}")
+        ax[1, 0].plot(acc_vis_tstamps, vis_pixel_vals[i], '.', label=f"Pixel {i}", color=f"C{i}")
     ax[1, 0].set_title("Visible Pixel Values")
     ax[1, 0].set_xlabel("Timestamp")
     ax[1, 0].set_ylabel("Pixel Value")
     for i, pixel in enumerate(thr_selected_pixels):
         ax[0, 1].scatter(pixel[0], pixel[1], color=f"C{i}")
-        ax[1, 1].plot(thr_tstamps, thr_pixel_vals[i], '.', label=f"Pixel {i}", color=f"C{i}")
+        ax[1, 1].plot(acc_thr_tstamps, thr_pixel_vals[i], '.', label=f"Pixel {i}", color=f"C{i}")
     ax[1, 1].set_title("Thermal Pixel Values")
     ax[1, 1].set_xlabel("Timestamp")
     ax[1, 1].set_ylabel("Pixel Value")
     plt.show()
+    # save figure
+    fig.savefig(f"./data/{data_slug}_data_stabilization_{time.strftime('%Y%m%d-%H%M%S')}.png")
 
     data_stable = input("Is the data stable? (y/n): ") == "y"
 
 # Confirm the data slug
-data_slug = args.data_slug
 print(f"Data slug: {data_slug}")
 confirm = input("Is this the correct data slug? (y/n): ") == "y"
 if not confirm:
     shutdown()
+    sys.exit()
 
 running = True
 pause_recording = False
@@ -427,6 +439,11 @@ vis_cam_obj.set_exposure(pulsetrain_settings['vis_cam_exposure_lp700'][0])
 stage_obj.set_filter_position("lp700", blocking=True)
 
 print("Saving the data")
+acc_vis_imgs = np.array(acc_vis_imgs)
+acc_vis_tstamps = np.array(acc_vis_tstamps)
+acc_thr_imgs = np.array(acc_thr_imgs)
+acc_thr_tstamps = np.array(acc_thr_tstamps)
+
 ls_vis_frames = np.array(ls_vis_frames)
 ls_vis_tstamps = np.array(ls_vis_tstamps)
 ls_vis_frame_numbers = np.array(ls_vis_frame_numbers)
@@ -445,30 +462,36 @@ vis_exposures_sp700 = np.array(vis_exposures_sp700)
 vis_gains_sp700 = np.array(vis_gains_sp700)
 
 output_filename = f"./data/{data_slug}_{time.strftime('%Y%m%d-%H%M%S')}.npz"
-np.savez(output_filename, ls_vis_frames=ls_vis_frames,
-                          ls_vis_tstamps=ls_vis_tstamps,
-                          ls_vis_frame_numbers=ls_vis_frame_numbers,
-                          ls_vis_exposures=ls_vis_exposures,
-                          ls_vis_gains=ls_vis_gains,
-                          ls_thr_frames=ls_thr_frames,
-                          ls_thr_tstamps=ls_thr_tstamps,
-                          ls_thr_frame_numbers=ls_thr_frame_numbers,
-                          ls_thr_telemetry=ls_thr_telemetry,
-                          vis_frames_sp700=vis_frames_sp700,
-                          vis_tstamps_sp700=vis_tstamps_sp700,
-                          vis_frame_numbers_sp700=vis_frame_numbers_sp700,
-                          vis_exposures_sp700=vis_exposures_sp700,
-                          vis_gains_sp700=vis_gains_sp700,
-                          **pulsetrain_settings)
+np.savez(output_filename, 
+                            acc_vis_imgs=acc_vis_imgs,
+                            acc_vis_tstamps=acc_vis_tstamps,
+                            acc_thr_imgs=acc_thr_imgs,
+                            acc_thr_tstamps=acc_thr_tstamps,
+                            ls_vis_frames=ls_vis_frames,
+                            ls_vis_tstamps=ls_vis_tstamps,
+                            ls_vis_frame_numbers=ls_vis_frame_numbers,
+                            ls_vis_exposures=ls_vis_exposures,
+                            ls_vis_gains=ls_vis_gains,
+                            ls_thr_frames=ls_thr_frames,
+                            ls_thr_tstamps=ls_thr_tstamps,
+                            ls_thr_frame_numbers=ls_thr_frame_numbers,
+                            ls_thr_telemetry=ls_thr_telemetry,
+                            vis_frames_sp700=vis_frames_sp700,
+                            vis_tstamps_sp700=vis_tstamps_sp700,
+                            vis_frame_numbers_sp700=vis_frame_numbers_sp700,
+                            vis_exposures_sp700=vis_exposures_sp700,
+                            vis_gains_sp700=vis_gains_sp700,
+                            **pulsetrain_settings)
 print(f"Data saved to {output_filename}")
 
+# Shutdown the cameras
+shutdown()
 
 ## Preview the data
 fig, ax = plt.subplots(2, 2, figsize=(10, 10))
 ax[0, 0].imshow(ls_vis_frames[-1, :, :], cmap='gray')
 ax[0, 0].set_title('Visible Image')
 for i, pixel in enumerate(vis_selected_pixels):
-    import pdb; pdb.set_trace()
     ax[1, 0].plot(ls_vis_tstamps - ls_vis_tstamps[0], ls_vis_frames[:, pixel[1], pixel[0]] / ls_vis_exposures, '.', label=f"Pixel {i}", color=f"C{i}")
     ax[0, 0].scatter(pixel[0], pixel[1], color=f"C{i}")
 ax[1, 0].set_title('Visible Pixel Value')
@@ -482,7 +505,11 @@ for i, pixel in enumerate(thr_selected_pixels):
 ax[1, 1].set_title('Thermal Pixel Value')
 ax[1, 1].set_xlabel('Time (s)')
 ax[1, 1].set_ylabel('Pixel Value')
-plt.show()
+png_filename = output_filename.replace(".npz", "_preview.png")
+fig.savefig(png_filename)
+print(f"Preview saved to {png_filename}")
+# plt.show()
 
-# Shutdown the cameras
-shutdown()
+# input("Press enter to exit")
+
+print("Data collection script complete")
