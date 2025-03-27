@@ -12,10 +12,26 @@ class BosonWithTelemetry(ThreadedBoson):
 
         self.configure()
         self.start()
-        self.camera.do_ffc()    
+        self.camera.do_ffc()
+        self.logged_images = []
+        self.logged_tstamps = []
+        self.enable_logging = False
 
     def __del__(self):
-        self.stop()    
+        self.stop()
+        self.camera.close()
+    
+    def stop_logging(self):
+        self.enable_logging = False
+
+    def start_logging(self):
+        self.enable_logging = True
+        self.add_post_callback(self.post_cap_hook)
+    
+    def post_cap_hook(self, image):
+        if self.enable_logging:
+            self.logged_images.append(image)
+            self.logged_tstamps.append(time.time())
 
     def compute_timestamp_offset(self):
         (_, latest_image), system_time = self.camera.cap.read(), time.time()
@@ -49,6 +65,7 @@ class BosonWithTelemetry(ThreadedBoson):
         timestamp = timestamp_in_ms / 1000.0
         return frame_counter, timestamp
 
+    
 
 if __name__ == "__main__":
     
