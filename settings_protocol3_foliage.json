@@ -1,0 +1,10 @@
+{
+    "scene": "large_foliage",
+    "nominal_light_voltage": 5,
+    "nominal_exposure": 25000,
+    "vis_filter": "lp700",
+    "light_control_voltages": [10, 5, 8, 5, 6, 5, 7, 5, 9, 5],
+    "light_pulse_duration":   [ 5, 5, 5, 5, 5, 5, 5, 5, 5, 13],
+    "vis_cam_exposure_lp700": [10000, 25000, 14000, 25000, 22000, 25000, 19000, 25000, 12000, 25000],
+    "vis_cam_exposure_sp700": [200, 300, 250, 300, 300, 300, 300, 300, 200, 300]
+}

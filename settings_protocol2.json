@@ -1,0 +1,9 @@
+{
+    "nominal_light_voltage": 5,
+    "nominal_exposure": 500,
+    "vis_filter": "sp700",
+    "light_control_voltages": [10, 0, 8, 2, 6, 4, 7, 3, 9, 5],
+    "light_pulse_duration":   [ 5, 5, 5, 5, 5, 5, 5, 5, 5, 15],
+    "vis_cam_exposure_lp700": [1800, 1750, 1700, 1650, 1600, 1450, 1375],
+    "vis_cam_exposure_sp700": [250, 6000, 300, 2500, 500, 1000, 300, 1000, 250, 500]
+}

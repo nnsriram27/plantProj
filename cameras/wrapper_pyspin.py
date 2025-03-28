@@ -129,6 +129,18 @@ class Blackfly(object):
     def get_auto_exposure(self):
         return self.cam.ExposureAuto.GetValue()
     
+    def set_auto_exposure_limits(self, min_exp, max_exp):
+        ae_lb = PySpin.CFloatPtr(self.nodemap.GetNode('AutoExposureExposureTimeLowerLimit'))
+        ae_ub = PySpin.CFloatPtr(self.nodemap.GetNode('AutoExposureExposureTimeUpperLimit'))
+        ae_lb.SetValue(min_exp)
+        ae_ub.SetValue(max_exp)
+        return self.get_auto_exposure_limits()
+    
+    def get_auto_exposure_limits(self):
+        ae_lb = PySpin.CFloatPtr(self.nodemap.GetNode('AutoExposureExposureTimeLowerLimit'))
+        ae_ub = PySpin.CFloatPtr(self.nodemap.GetNode('AutoExposureExposureTimeUpperLimit'))
+        return ae_lb.GetValue(), ae_ub.GetValue()
+    
     def set_exposure(self, exposure_time, check=True):
         if exposure_time < self.min_exp_val:
             print(f'Given Exposure Time of {exposure_time} is less than min exp value, using {self.min_exp_val}...')

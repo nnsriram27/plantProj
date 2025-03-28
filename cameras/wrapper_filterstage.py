@@ -3,7 +3,7 @@ from thorlabs_elliptec import ELLx
 
 class FilterStage(object):
     def __init__(self):
-        self._filter_stage = ELLx()
+        self._filter_stage = ELLx("COM3")
 
         self.position_list = {'bp680': 0,
                               'lp700': 31,
